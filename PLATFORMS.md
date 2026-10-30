@@ -24,6 +24,7 @@ build output.
 | Path | What it does |
 | --- | --- |
 | `src-tauri/tauri.macos.conf.json` | Bundle targets `app` + `dmg`, ad-hoc signing (`-`), no hardened runtime, macOS 11 floor. Tauri merges it automatically on a Mac. |
+| `scripts/prepare-runtime-windows.mjs` | Assembles `runtime/` on Windows: downloads Node 24 + the Theseus PostgreSQL build + gyan's ffmpeg, **compiles pgvector with MSVC** (the Windows Postgres binaries ship none), builds the patched Immich with `pnpm`, calls the plugin script, builds the web UI, installs the CLIP service and its models. |
 | `scripts/prepare-runtime-macos.mjs` | Assembles `runtime/` on a Mac: downloads Node 24 + Postgres.app + ffmpeg, builds the patched Immich with `pnpm`, prunes the PostGIS/GDAL tree, installs the arm64 `ffprobe`, builds the core plugin wasm, fetches CLIP models. |
 | `scripts/build-mac.sh` | One command: runtime → typecheck → `tauri build --bundles app,dmg` → repair the bundle → re-sign → rebuild the dmg → copy to `~/Downloads`. Sets `RUSTUP_TOOLCHAIN=stable`. |
 | `scripts/repair-runtime-copy-macos.mjs` | Runs on the finished `.app` only: restores the directory symlinks Tauri's copier drops and the file symlinks it dereferences. Called by `build-mac.sh`; does nothing useful on Windows. |
@@ -64,10 +65,10 @@ work is unscripted — which is why the Mac one is worth reading before starting
 
 | Path | Windows | macOS |
 | --- | --- | --- |
-| `runtime/` | Assembled by hand | `scripts/prepare-runtime-macos.mjs` |
-| `runtime/node` | Windows build | Node 24.22.2 for darwin-arm64 |
-| `runtime/pg` | PostgreSQL 17 + pgvector, as installed | Postgres.app `Versions/17`, GIS pruned (371 → 230 MB) |
-| `runtime/ffmpeg` | Windows binaries | macOS build, `ffprobe` from `@ffprobe-installer` |
+| `runtime/` | `scripts/prepare-runtime-windows.mjs` | `scripts/prepare-runtime-macos.mjs` |
+| `runtime/node` | Node 24 for win32-x64 | Node 24 for darwin-arm64 |
+| `runtime/pg` | Theseus PostgreSQL 17 binaries, pgvector 0.8.7 compiled with MSVC | Postgres.app `Versions/17`, GIS pruned (371 → 230 MB) |
+| `runtime/ffmpeg` | gyan.dev essentials build | macOS build, `ffprobe` from `@ffprobe-installer` |
 | `runtime/www` | Immich web UI build | same, from `prebuilt/www` |
 | `runtime/plugins/immich-plugin-core` | `scripts/build-core-plugin-windows.mjs` (2.5 MB) | built by the assembler (2.5 MB) |
 | `runtime/ml` | `npm install` on Windows | `npm install` in `runtime/ml` on the Mac |

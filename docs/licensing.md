@@ -33,7 +33,7 @@ than to pushing commits.
 | Immich server (`dist/main.js` + deployed `node_modules`) | 3.3.5 + patch | built from the patched checkout | AGPL-3.0 |
 | Immich web UI (`runtime/www`) | 3.3.5 | same build | AGPL-3.0 |
 | `immich-plugin-core` wasm | 2.0.1 | `packages/plugin-core`, built by the assemblers | AGPL-3.0 |
-| FFmpeg | 8.1.1 essentials | Windows: gyan.dev build. macOS: npm `ffmpeg-static` | **GPL-3.0** |
+| FFmpeg | gyan.dev essentials (9.0.2 when last assembled) | Windows: gyan.dev build. macOS: npm `ffmpeg-static` | **GPL-3.0** |
 | ffprobe | same release | Windows: gyan.dev. macOS: `@ffprobe-installer/ffprobe` (LGPL-2.1) | GPL-3.0 / LGPL-2.1 |
 | PostgreSQL | 17.7 | `theseus-rs/postgresql_binaries` | PostgreSQL Licence |
 | pgvector | bundled with the above | `share/extension/vector*` | PostgreSQL Licence |
@@ -46,13 +46,20 @@ than to pushing commits.
 The Windows FFmpeg licence is read off the binary rather than assumed:
 
 ```
-ffmpeg version 8.1.1-essentials_build-www.gyan.dev
-configuration: --enable-gpl --enable-version3 … --enable-libx264 --enable-libx265 …
+ffmpeg version 9.0.2-essentials_build-www.gyan.dev
+configuration: --enable-gpl --enable-version3 … --enable-libx264 … --enable-libx265 …
 ```
 
 `--enable-gpl --enable-version3` plus the libx264/x265 encoders makes that build
 **GPL-3.0**, not LGPL. `ffmpeg-static`, the package the macOS assembler installs,
 declares `GPL-3.0-or-later`. So both platforms ship GPL FFmpeg.
+
+The version is not pinned. gyan.dev serves its newest build at a fixed URL, so the
+assembler downloaded 8.1.1 when this runtime was first put together and 9.0.2 a day
+later, and it prints whatever it got. Every version since at least 8.0 has carried the
+same flags, but a release should record the version it shipped, because "that exact
+build" is what the source offer below has to match. Pass `--ffmpeg-zip` with an
+archive URL to pin one.
 
 To audit the parts that are generated rather than listed here:
 

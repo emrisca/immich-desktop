@@ -26,6 +26,11 @@ ml/models
 # against their published checksums on first use.
 .win-cache
 
+# Windows runtime assembler: its download cache, the Immich checkout it builds,
+# and any scratch runtime it writes while being tested.
+.win-build
+.runtime-test
+
 # Corresponding-source packaging: the upstream clone, the tree it stages, and the
 # archive it writes. All three are outputs of `scripts/package-core-source.mjs`.
 .source-cache

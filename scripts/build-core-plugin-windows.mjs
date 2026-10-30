@@ -39,7 +39,10 @@ import { gunzipSync } from "node:zlib";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const cache = path.join(root, ".win-cache");
 const tools = path.join(cache, "tools");
-const runtime = path.join(root, "runtime");
+// Overridable so the runtime assembler can build into a scratch tree while it is
+// being tested without touching the runtime the app actually runs from.
+const runtimeArg = process.argv.indexOf("--runtime");
+const runtime = path.resolve(root, runtimeArg >= 0 ? process.argv[runtimeArg + 1] : "runtime");
 
 const EXTISM_JS_VERSION = "1.7.0";
 const BINARYEN_VERSION = "version_133";

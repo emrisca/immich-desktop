@@ -38,13 +38,22 @@ bash scripts/build-mac.sh            # --skip-ml leaves out the CLIP service
 ## The runtime
 
 `runtime/` holds the binaries a build runs: Node, PostgreSQL 17 with pgvector, FFmpeg, the
-patched Immich server, its web UI, the CLIP service and the workflow plugin. It is about 1 GB
-and is not in the repository.
+patched Immich server, its web UI, the CLIP service and the workflow plugin. It is about
+1.2 GB and is not in the repository. Each platform assembles it from upstream.
 
-On macOS, `scripts/prepare-runtime-macos.mjs` builds it from upstream. Windows has no
-assembler yet. The runtime there was put together by hand, so a Windows build from a fresh
-clone starts nothing until someone writes that step. The plugin is the exception.
-`scripts/build-core-plugin-windows.mjs` builds it on Windows from an Immich checkout.
+```sh
+node scripts/prepare-runtime-windows.mjs     # Windows
+bash scripts/build-mac.sh                    # macOS: runtime, bundle, dmg
+```
+
+On Windows the assembler needs Visual Studio Build Tools with the C++ workload, the same one
+the Rust MSVC toolchain needs. PostgreSQL's Windows binaries ship no pgvector, so the
+assembler compiles pgvector 0.8.7 against the Postgres tree it just unpacked. Skip that step
+and Immich's first migration fails on `CREATE EXTENSION vector`.
+
+`--skip-server`, `--skip-web`, `--skip-plugin`, `--skip-ml` and `--skip-models` assemble part
+of the tree. `--runtime <dir>` writes somewhere other than `runtime/`, which is what to use
+when testing the assembler without touching the runtime the app runs from.
 
 The two runtimes are not interchangeable. The bundler copies `runtime/` into the app
 unchanged, so a runtime from the other platform installs and then fails to start every
