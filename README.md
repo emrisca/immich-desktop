@@ -16,19 +16,75 @@ requires. The FFmpeg in both runtimes is a GPL-3.0 build, which `PLAN.md` did no
 
 ## Build
 
-Windows needs Node 20+ and Rust with the MSVC toolchain, pinned in
-`src-tauri/rust-toolchain.toml`.
+Windows needs Node 20+, Rust with the MSVC toolchain (pinned in
+`src-tauri/rust-toolchain.toml`), and Visual Studio Build Tools with the C++ workload, which
+the runtime assembler needs to compile pgvector.
+
+```sh
+powershell -ExecutionPolicy Bypass -File scripts/build-windows.ps1
+```
+
+That one command installs the npm packages, assembles `runtime/`, typechecks, builds the
+installer, checks what it built, and copies it to `%USERPROFILE%\Downloads`. The checks are the
+part worth knowing about: it refuses to hand over an installer whose `runtime/` is missing any
+of the eleven files the supervisor needs (`node.exe`, `postgres.exe`, pgvector and `uuid-ossp`,
+`ffmpeg.exe`, the server and its `kysely`, the web UI, the plugin wasm, the CLIP service), or
+one under 250 MB, which is what an installer without a runtime looks like. Where 7-Zip is
+installed it also lists the installer and looks for those twelve paths inside it, so the check
+is on the packed file rather than the folder it was packed from. A dropped file otherwise
+produces a build that reports success and an app that starts nothing.
+
+`-SkipRuntime` reuses the `runtime/` already on disk for a rebuild after a UI or Rust change;
+`--skip-ml`, `--skip-models` and the rest go through to the assembler.
+
+```sh
+powershell -ExecutionPolicy Bypass -File scripts/build-windows.ps1 -SkipRuntime
+powershell -ExecutionPolicy Bypass -File scripts/build-windows.ps1 --skip-ml
+```
+
+## Release
+
+`scripts/build-windows.ps1` stops at a file in Downloads. `scripts/release-windows.ps1` goes the
+rest of the way: it runs that build, installs the result silently the way a user does, and then
+measures the installed copy rather than the build tree.
+
+```sh
+powershell -ExecutionPolicy Bypass -File scripts/release-windows.ps1
+```
+
+It asserts what a build cannot: the installer's own icon, the exe icon Windows draws on the
+taskbar, the Start menu shortcut and the exe it points at, the eleven runtime files under
+`%LOCALAPPDATA%\Immich Desktop`, the file version, and a launch that has to produce a window
+before it closes the app again. Icon checks compare an 8x8 colour grid against
+`src-tauri/icons/icon.ico`, so a build that ships Tauri's default art fails here. Every check
+runs before the verdict, so one bad release reports all of its problems at once and exits
+non-zero.
+
+`-SkipRuntime` reuses `runtime/` for a rebuild, and `-NoLaunch` stops after the install checks on
+a machine where opening the app would disturb a library in use.
+
+For the dev loop, without packaging anything:
 
 ```sh
 npm install
 npm run dev          # UI only, http://localhost:1420
 npm run tauri dev    # the app
 npm run typecheck
-npm run tauri build  # MSI and NSIS installer in src-tauri/target/release/bundle
 ```
 
-macOS needs the same, plus `RUSTUP_TOOLCHAIN=stable`, because that pin names a Windows target
-that cannot exist on a Mac. `scripts/build-mac.sh` exports it, assembles the runtime and
+There is one Windows installer by choice: NSIS, per user, into `%LOCALAPPDATA%\Immich Desktop`,
+no administrator prompt. `src-tauri/tauri.windows.conf.json` sets that and the `nsis` block, and
+narrows `targets` to it, so no MSI is built. An MSI installs per machine, needs admin, and would
+copy 1.4 GB of runtime into `Program Files` for a personal app.
+
+The installer is **not code-signed**. Windows SmartScreen therefore stops the first run with
+"Windows protected your PC": *More info*, then *Run anyway*. If that button is absent, the file
+came from the internet and was marked: right-click the installer, *Properties*, *Unblock*. The
+Windows Firewall prompt comes next and has to be allowed on private networks, or phones cannot
+reach the library.
+
+macOS needs the same toolchain, plus `RUSTUP_TOOLCHAIN=stable`, because that pin names a Windows
+target that cannot exist on a Mac. `scripts/build-mac.sh` exports it, assembles the runtime and
 leaves the app and a dmg in `~/Downloads`.
 
 ```sh
@@ -42,8 +98,8 @@ patched Immich server, its web UI, the CLIP service and the workflow plugin. It 
 1.4 GB and is not in the repository. Each platform assembles it from upstream.
 
 ```sh
-node scripts/prepare-runtime-windows.mjs     # Windows
-bash scripts/build-mac.sh                    # macOS: runtime, bundle, dmg
+powershell -ExecutionPolicy Bypass -File scripts/build-windows.ps1   # Windows: runtime, installer
+bash scripts/build-mac.sh                                            # macOS: runtime, bundle, dmg
 ```
 
 On Windows the assembler needs Visual Studio Build Tools with the C++ workload, the same one
@@ -77,8 +133,9 @@ src/styles/app.css      shell, panel recipe, primitives, views
 src/ui/                 button, field, panel, switch, pill, tabs
 src/app/                titlebar, sidebar, overview, storage, backups, logs, phone card
 src-tauri/              the window and the supervisor: runtime, layout, import, watch, firewall, qr
-  tauri.macos.conf.json   merged on a Mac only; the rest of the bundle config is shared
-scripts/                runtime assemblers, plugin build, source packaging
+  tauri.windows.conf.json NSIS only, per-user install; merged on Windows only
+  tauri.macos.conf.json   app + dmg; merged on a Mac only; the rest of the bundle config is shared
+scripts/                runtime assemblers, per-platform build scripts, plugin build, source packaging
 immich/                 the Immich patch and what each change fixes
 ml/                     CLIP service for smart search
 spike/                  M0 probes, and the results they produced

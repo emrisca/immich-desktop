@@ -11,7 +11,7 @@ build output.
 
 ## The rule the tree follows
 
-1. A platform-specific file says so in its name: `-macos`, `-mac`, or Tauri's own
+1. A platform-specific file says so in its name: `-macos`, `-mac`, `-windows`, or Tauri's own
    `tauri.<platform>.conf.json`. Adding a new one means following that, not inventing a folder.
 2. Platform conditionals inside shared code are written down: `cfg(windows)` and
    `cfg(target_os = "macos")` in Rust, platform checks in `src/`. Those files stay shared and
@@ -36,10 +36,12 @@ of the Windows pin below.
 
 | Path | What it does |
 | --- | --- |
+| `src-tauri/tauri.windows.conf.json` | Bundle targets `nsis` only, per-user install (`installMode: currentUser`), English-only installer UI, LZMA. Merged on Windows only, so no MSI is built. |
 | `src-tauri/rust-toolchain.toml` | Pins `stable-x86_64-pc-windows-msvc`. A Mac build **cannot** use this toolchain, so it must override the file (`RUSTUP_TOOLCHAIN=stable`), which `build-mac.sh` does. |
 | `src-tauri/.cargo/config.toml` | `crt-static` rustflags, scoped to `[target.x86_64-pc-windows-msvc]`, so it is inert on a Mac. Deliberately contains **no** `[build] target`; that line is what used to break every Mac build. |
 | `src-tauri/src/firewall.rs` | Inbound rule via `ShellExecuteW` on Windows; returns `true` as a no-op elsewhere. |
 | `scripts/prepare-runtime-windows.mjs` | Assembles `runtime/` on Windows: downloads Node 24, EnterpriseDB's PostgreSQL 17 and gyan's ffmpeg, compiles pgvector 0.8.7 with MSVC against EDB's headers and `postgres.lib`, then drops pgAdmin, StackBuilder, docs and headers. Builds the patched Immich with `pnpm` using a hoisted deploy so the tree has no absolute symlinks, builds the web UI, calls the plugin script, and installs the CLIP service and its models. |
+| `scripts/build-windows.ps1` | One command: `npm install`, the runtime assembler above, typecheck, `tauri build --bundles nsis`, then the checks — every file the supervisor needs present in the bundled `runtime/`, installer at least 250 MB, installer newer than the newest runtime file, and with 7-Zip present the same paths inside the installer itself — copies the installer to `%USERPROFILE%\Downloads`. `-SkipRuntime` reuses an assembled runtime; `--skip-*` goes to the assembler. |
 | `scripts/build-core-plugin-windows.mjs` | Builds `runtime/plugins/immich-plugin-core` from the Immich checkout: fetches extism-js and binaryen into `.win-cache/tools` (checksums checked), runs `plugin-sdk prepareBuild`, `tsc --noEmit`, esbuild and extism-js, validates the wasm, then copies `manifest.json` and `dist/` into the runtime. |
 | `src-tauri/src/layout.rs` | Mostly shared, but `plain()` strips the Windows `\\?\` extended-path prefix that `canonicalize` adds. The sync-folder guard (`OneDrive`, `clouddocs`, `mobile documents`) is shared. |
 
@@ -53,7 +55,7 @@ the `uuid-ossp` extension Immich's schema uses.
 | --- | --- |
 | `src/`, `index.html`, `vite.config.ts`, `tsconfig.json` | The hub UI. Identical on both; `TitleBar.tsx` and `app.css` draw macOS traffic lights or Windows glyphs at runtime. |
 | `src-tauri/src/{lib,runtime,layout,import,watch,qr,settings,api,probe}.rs` | The window and the supervisor. Per-platform branches: `kill_tree` (`taskkill /F /T` versus `kill -9`), `LC_ALL`/`LANG` for Postgres (a macOS fix, harmless on Windows), and the hub address in `lib.rs`. |
-| `src-tauri/tauri.conf.json` | Shared base: window, resources (`../runtime/` to `runtime/`), icons. |
+| `src-tauri/tauri.conf.json` | Shared base: window, resources (`../runtime/` to `runtime/`), icons. Each platform's `tauri.<platform>.conf.json` sets its own `targets`, so the base one is only what the bundler falls back to on an unsupported platform. |
 | `src-tauri/Cargo.toml`, `Cargo.lock` | One dependency set. `qrcode` is a normal dependency because `qr.rs` draws the QR on every platform. |
 | `immich/v3.3.5-desktop.patch` | The 11 upstream changes. Platform-neutral by design: no-Redis queue, ffmpeg HEIC, absolute-path fixes that work on `C:\` and `/`. |
 | `ml/` | CLIP service. `fetch-models.mjs` writes to `ml/models` unless `CLIP_MODEL_DIR` says otherwise. The native half (`onnxruntime-node`, `sharp`) is installed per platform into `runtime/ml`. |
