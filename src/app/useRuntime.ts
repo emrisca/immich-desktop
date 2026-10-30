@@ -61,17 +61,12 @@ export function useRuntime() {
   const start = useCallback(() => run(startRuntime), [run]);
   const stop = useCallback(() => run(stopRuntime), [run]);
 
-  const chooseFolder = useCallback(
-    async (path: string) => {
-      try {
-        setStatus(await setLibraryFolder(path));
-        setError(null);
-      } catch (cause) {
-        setError(cause instanceof Error ? cause.message : String(cause));
-      }
-    },
-    [],
-  );
+  // The refusal goes back to the caller: Storage shows it beside the field that
+  // caused it, instead of on Overview where the user is not looking.
+  const chooseFolder = useCallback(async (path: string) => {
+    setStatus(await setLibraryFolder(path));
+    setError(null);
+  }, []);
 
   const allowPhones = useCallback((enabled: boolean) => run(() => setAllowPhones(enabled)), [run]);
   const allowFirewall = useCallback(() => run(requestFirewall), [run]);

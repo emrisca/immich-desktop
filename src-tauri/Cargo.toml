@@ -27,11 +27,18 @@ qrcode = { version = "0.14", default-features = false }
 # Elevating the firewall rule. ShellExecuteW rather than a PowerShell one-liner:
 # an unsigned app spawning `powershell -EncodedCommand` at startup is the shape
 # Windows Defender deletes as Trojan:PowerShell/Powdow, and it did exactly that.
+# GetDiskFreeSpaceExW reports the free space the Storage screen shows; liberating
+# that from a process call keeps the measurement free of a shell.
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = [
   "Win32_UI_Shell",
   "Win32_UI_WindowsAndMessaging",
+  "Win32_Storage_FileSystem",
 ] }
+
+# statvfs for the same number on macOS and Linux.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
 
 [profile.release]
 codegen-units = 1

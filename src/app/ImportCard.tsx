@@ -96,7 +96,7 @@ export function ImportCard({ status, live, running }: Props) {
             value={key}
             placeholder="paste an API key"
             onChange={(event) => setKey(event.target.value)}
-            hint="Open the library once, then Settings → API Keys → New API Key. Imports use it instead of your password."
+            hint="Open the library once, then go to Settings, API Keys, New API Key. Imports use the key instead of your password."
             action={
               <Button size="sm" onClick={() => void saveKey()} disabled={!key.trim() || saving}>
                 {saving ? "Saving" : "Save"}
@@ -116,7 +116,7 @@ export function ImportCard({ status, live, running }: Props) {
         <p className="dropzone__note">
           {busy
             ? progress?.current
-            : "JPG, PNG, HEIC, RAW and the usual video formats. Files already in the library are skipped."}
+            : "JPG, PNG, HEIC, RAW, MP4 and MOV. Files already in the library are skipped."}
         </p>
 
         {busy ? (
@@ -169,9 +169,8 @@ export function ImportCard({ status, live, running }: Props) {
         ) : (
           <>
             <p className="hint" style={{ marginTop: 0 }}>
-              Save a photo into one folder and it lands in Immich within seconds — point this at
-              whatever your phone sync or camera import already writes to. Nothing is moved or
-              deleted.
+              Save a photo into this folder and Immich imports it within seconds. Point it at the
+              folder your phone sync or camera already writes to. The file is copied, not moved.
             </p>
             <Button size="sm" onClick={() => void choose()}>
               Choose folder

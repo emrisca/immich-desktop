@@ -13,6 +13,9 @@ export default defineConfig({
   server: {
     port: 1420,
     strictPort: true,
+    // A Rust build writes multi-hundred-megabyte artifacts into `src-tauri`, and
+    // the dev server died once when a rebuild replaced one mid-scan.
+    watch: { ignored: ["**/src-tauri/**"] },
   },
   build: {
     target: "es2021",

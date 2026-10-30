@@ -26,6 +26,34 @@ export type Status = {
   firewall: boolean;
 };
 
+export type LogSource = {
+  id: string;
+  name: string;
+  path: string;
+  exists: boolean;
+  bytes: number;
+};
+
+export type LogLine = {
+  source: string;
+  text: string;
+};
+
+export type LogView = {
+  sources: LogSource[];
+  lines: LogLine[];
+};
+
+/** Measured from the folder by the supervisor, never from a stored number. */
+export type LibraryUsage = {
+  folder: string;
+  photos: number;
+  videos: number;
+  bytes: number;
+  free: number;
+  total: number;
+};
+
 export type ImportProgress = {
   running: boolean;
   total: number;
@@ -111,6 +139,15 @@ export function fetchWatch(): Promise<WatchStatus> {
 /** An empty path stops watching. */
 export function setWatchFolder(path: string): Promise<WatchStatus> {
   return call<WatchStatus>("set_watch_folder", { path });
+}
+
+/** The tail of the server log, the database log, or both. */
+export function fetchLogs(source: string): Promise<LogView> {
+  return call<LogView>("logs_read", { source });
+}
+
+export function fetchUsage(): Promise<LibraryUsage> {
+  return call<LibraryUsage>("library_usage");
 }
 
 /** The address to paste into the phone app. */

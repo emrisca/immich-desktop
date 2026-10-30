@@ -158,8 +158,8 @@ function PhoneCard({
           <p className="phone__address">{url}</p>
           <p className="hint">
             {waiting
-              ? "The network address appears once the server is up and the machine is on a network."
-              : "Paste this into the Immich app on your phone. It stays the same unless the network address of this computer changes."}
+              ? "The address appears once the server runs and this computer is on a network."
+              : "Paste this into the Immich app on your phone. It only changes when this computer's network address does."}
           </p>
           <div className="phone__actions">
             <Button variant="primary" onClick={() => void copy()} disabled={waiting}>
@@ -169,25 +169,25 @@ function PhoneCard({
           </div>
           <ul className="phone__steps">
             <li>
-              <strong aria-hidden="true">1</strong> Same Wi-Fi as this computer
+              <strong aria-hidden="true">1</strong> Join the same Wi-Fi as this computer.
             </li>
             <li>
-              <strong aria-hidden="true">2</strong> Immich app → Server URL
+              <strong aria-hidden="true">2</strong> In the Immich app, open Server URL.
             </li>
             <li>
-              <strong aria-hidden="true">3</strong> Paste, then sign in
+              <strong aria-hidden="true">3</strong> Paste the address and sign in.
             </li>
           </ul>
           {copied === "failed" ? (
             <p className="hint">
-              The clipboard is unavailable here — select the address above instead.
+              The clipboard is blocked here. Select the address above and copy it yourself.
             </p>
           ) : null}
           {blocked ? (
             <>
               <p className="hint">
-                Windows is still blocking this app on the local network, so the address
-                above will time out on the phone. Allow it once — Windows will ask.
+                Windows blocks this app on the local network, so the phone cannot reach the
+                address above. Allow it once, and Windows shows its prompt.
               </p>
               <div className="phone__actions">
                 <Button onClick={onAllowFirewall}>Allow through firewall</Button>
@@ -234,7 +234,7 @@ function LibrarySummary({ status, live }: { status: Status | null; live: boolean
                 : "First run will initialise the cluster"
               : `${library.photos.toLocaleString()} photos · ${library.videos} videos`}
           </span>
-          <span>{live ? "M4 measures sizes" : `${library.free} free`}</span>
+          <span>{live ? "sizes on Storage" : `${library.free} free`}</span>
         </div>
         <div
           className="meter__track"
@@ -279,8 +279,9 @@ export function Overview({
           <p className="eyebrow">On this machine</p>
           <h1 className="display display--gradient">Your photos, on your machine.</h1>
           <p className="lede">
-            One process tree, no Docker. The server, the database and the queue live in the
-            folder you chose, and your phone talks to them over the local network.
+            Starting the server also starts its Postgres database and its job queue, without
+            Docker and without a terminal. All three run out of the folder you chose, and your
+            phone reaches them over the local network.
           </p>
 
           {live ? (

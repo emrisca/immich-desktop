@@ -5,6 +5,8 @@ mod api;
 mod firewall;
 mod import;
 mod layout;
+mod library;
+mod logs;
 mod probe;
 mod qr;
 mod runtime;
@@ -363,6 +365,28 @@ fn set_watch_folder(
     Ok(watch.view())
 }
 
+/// The tail of a service's log file. `source` is `all`, `server` or `database`.
+#[tauri::command]
+fn logs_read(
+    source: String,
+    limit: Option<usize>,
+    state: State<'_, Arc<Shared>>,
+) -> Result<logs::LogView, String> {
+    let folder = state.settings.lock().expect("settings lock").library_folder.clone();
+    logs::read(&Layout::new(Path::new(&folder)), &source, limit)
+}
+
+/// Measured from the folder itself, so the Storage screen reports what is there
+/// instead of a fixed number. The walk runs off the UI thread: a library with a
+/// hundred thousand originals takes long enough to notice.
+#[tauri::command]
+async fn library_usage(state: State<'_, Arc<Shared>>) -> Result<library::Usage, String> {
+    let folder = state.settings.lock().expect("settings lock").library_folder.clone();
+    tauri::async_runtime::spawn_blocking(move || library::usage(Path::new(&folder)))
+        .await
+        .map_err(|error| format!("Could not measure the library: {error}"))
+}
+
 /// Immich answers validation failures with `{"message": ["..."]}`; a bare
 /// string and an unparseable body are both possible, so fall back to the text.
 fn api_message(response: &api::Response) -> String {
@@ -652,6 +676,8 @@ pub fn run() {
             set_api_key,
             import_status,
             import_paths,
+            logs_read,
+            library_usage,
             watch_status,
             set_watch_folder,
             set_allow_phones,
