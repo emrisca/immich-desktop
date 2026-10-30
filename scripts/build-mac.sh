@@ -30,7 +30,13 @@ command -v cargo >/dev/null 2>&1 || {
 }
 
 echo "▸ npm install"
-npm install
+# `--no-save` is deliberate. npm 10 rewrites `package-lock.json` on every install,
+# dropping the `libc` field from the optional packages it skips on this platform
+# (the glibc and musl rollup and esbuild binaries), which left 57 lines of macOS
+# churn in a tracked file after each build — and a lockfile that differs from the
+# one the other machine builds from. The lock is still read and installed from;
+# only the write is skipped.
+npm install --no-save
 
 echo "▸ runtime for this Mac"
 node scripts/prepare-runtime-macos.mjs "$@"
