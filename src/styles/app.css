@@ -1040,10 +1040,14 @@ body {
 .phone__address {
   margin: 9px 0 0;
   font-family: var(--font-mono);
-  font-size: clamp(15px, 2.2vw, 18px);
+  /* Sized to the narrowest this card gets (the 306px column) so a whole
+     `http://a.b.c.d:port` stays on one line; 2.2vw outgrew it and split the port.
+     `break-word`, not `anywhere`, so a runaway address breaks at the scheme
+     `<wbr>` first and only mangles itself if even that will not fit. */
+  font-size: clamp(14px, 1.9vw, 16px);
   letter-spacing: -0.01em;
   color: var(--ink);
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
 }
 
 .phone__actions {

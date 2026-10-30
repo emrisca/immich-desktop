@@ -109,6 +109,10 @@ function PhoneCard({
   useEffect(() => () => window.clearTimeout(timer.current), []);
 
   const url = live && status ? serverUrl(status) : connection.url;
+  // Split only for line breaking; `copy` and the QR still use the whole `url`.
+  const gap = url.indexOf("://");
+  const scheme = gap === -1 ? "" : url.slice(0, gap + 3);
+  const rest = gap === -1 ? url : url.slice(gap + 3);
   const waiting = live && !status?.lanAddress;
   // The code is generated from the same string the card prints, so a phone that
   // scans it cannot end up on a different server than a phone that copied it.
@@ -155,7 +159,18 @@ function PhoneCard({
       <div className="phone">
         <div>
           <p className="eyebrow">Phone connection</p>
-          <p className="phone__address">{url}</p>
+          {/* The scheme is where the address is allowed to break if it has to: an
+              address that runs past the card used to split inside the port and
+              leave a lone digit on the next line. */}
+          <p className="phone__address">
+            {scheme ? (
+              <>
+                {scheme}
+                <wbr />
+              </>
+            ) : null}
+            {rest}
+          </p>
           <p className="hint">
             {waiting
               ? "The address appears once the server runs and this computer is on a network."

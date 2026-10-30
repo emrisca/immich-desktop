@@ -450,6 +450,16 @@ fn open_library(app: tauri::AppHandle, state: State<'_, Arc<Shared>>) -> Result<
     Ok(())
 }
 
+/// Whether a page this window loaded is the library rather than the hub.
+///
+/// The hub is `tauri://localhost` on a Mac and `http://tauri.localhost` on
+/// Windows; the library is always the loopback server, on whatever port the
+/// settings chose. Only the host is compared, so a route inside Immich (a shared
+/// album, say) counts as the library too.
+fn is_library_page(url: &tauri::Url) -> bool {
+    url.host_str() == Some("127.0.0.1")
+}
+
 /// The address the back chip returns to, given whatever URL the hub is showing.
 ///
 /// A whole URL, never an origin. The hub is served over `tauri://localhost` on
@@ -556,6 +566,35 @@ pub fn run() {
                 let _ = window.set_focus();
             }
         }))
+        // The window is frameless so the hub can draw its own controls, but the
+        // library is Immich's own page and draws no chrome at all. On a Mac that
+        // left nothing to grab: no traffic lights, no title bar, and a resize
+        // that only worked from a window edge a user had to find blind. Hand the
+        // window back to macOS while that page is showing — real buttons, real
+        // edges, native move and resize — and take it away again for the hub,
+        // which would otherwise draw a second set beside the real ones.
+        .on_page_load(|webview, payload| {
+            #[cfg(target_os = "macos")]
+            {
+                // The library is the local server; the hub is `tauri://localhost`
+                // on a Mac and `http://tauri.localhost` on Windows, so the host is
+                // what tells them apart on both.
+                //
+                // Only when it actually differs: this runs on every page load, and
+                // re-applying the style mask to a window that already has the one
+                // asked for makes macOS reset its frame — the startup hub load
+                // alone was enough to open the window zoomed to the whole screen.
+                let window = webview.window();
+                let library = is_library_page(payload.url());
+                // A failed query answers `None`, which differs from either value and
+                // so still applies the change: the chrome matters more than the frame.
+                if window.is_decorated().ok() != Some(library) {
+                    let _ = window.set_decorations(library);
+                }
+            }
+            #[cfg(not(target_os = "macos"))]
+            let _ = (webview, payload);
+        })
         .setup(|app| {
             let config_dir = app
                 .path()
@@ -700,7 +739,7 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::hub_target;
+    use super::{hub_target, is_library_page};
 
     /// The chip used to carry `origin()`, which is the literal string `null` for
     /// the `tauri:` scheme — the bug that sent the library to `/null` on the
@@ -718,5 +757,25 @@ mod tests {
     fn the_hub_address_drops_query_and_fragment() {
         let hub = tauri::Url::parse("http://tauri.localhost/#/overview?tab=1").expect("parses");
         assert_eq!(hub_target(&hub), "http://tauri.localhost/");
+    }
+
+    /// The native title bar is handed to the window only for the library. Both hub
+    /// spellings — the `tauri:` scheme on a Mac and the `tauri.localhost` host on
+    /// Windows — have to count as the hub, or the app would end up with the real
+    /// traffic lights beside the ones the hub draws.
+    #[test]
+    fn the_library_page_is_the_loopback_server_not_the_hub() {
+        for library in [
+            "http://127.0.0.1:2283/",
+            "http://127.0.0.1:2283/search?query=bee",
+            "http://127.0.0.1:8080/photos/1417edaa",
+        ] {
+            let url = tauri::Url::parse(library).expect("parses");
+            assert!(is_library_page(&url), "{library} is the library");
+        }
+        for hub in ["tauri://localhost/index.html", "http://tauri.localhost/"] {
+            let url = tauri::Url::parse(hub).expect("parses");
+            assert!(!is_library_page(&url), "{hub} is the hub");
+        }
     }
 }
