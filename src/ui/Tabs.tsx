@@ -1,4 +1,13 @@
-import { useId, useRef, type CSSProperties, type KeyboardEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type KeyboardEvent,
+} from "react";
 
 export type TabOption = {
   id: string;
@@ -18,11 +27,49 @@ type Props = {
  */
 export function Tabs({ options, value, onChange, label }: Props) {
   const baseId = useId();
+  const listRef = useRef<HTMLDivElement | null>(null);
   const refs = useRef<(HTMLButtonElement | null)[]>([]);
+  const [thumb, setThumb] = useState({ x: 0, width: 0 });
   const index = Math.max(
     0,
     options.findIndex((option) => option.id === value),
   );
+
+  /**
+   * The tabs are as wide as their labels, so the thumb is measured from the one
+   * that is selected instead of assuming an equal slice of the row.
+   */
+  const measure = useCallback(() => {
+    const list = listRef.current;
+    const tab = refs.current[index];
+    if (!list || !tab) {
+      return;
+    }
+    const row = list.getBoundingClientRect();
+    const box = tab.getBoundingClientRect();
+    setThumb((current) =>
+      current.x === box.left - row.left && current.width === box.width
+        ? current
+        : { x: box.left - row.left, width: box.width },
+    );
+  }, [index]);
+
+  useLayoutEffect(measure, [measure]);
+
+  useEffect(() => {
+    const list = listRef.current;
+    if (!list || typeof ResizeObserver === "undefined") {
+      return;
+    }
+    const observer = new ResizeObserver(measure);
+    observer.observe(list);
+    for (const tab of refs.current) {
+      if (tab) {
+        observer.observe(tab);
+      }
+    }
+    return () => observer.disconnect();
+  }, [measure]);
 
   const select = (next: number) => {
     const wrapped = (next + options.length) % options.length;
@@ -63,11 +110,12 @@ export function Tabs({ options, value, onChange, label }: Props) {
 
   return (
     <div
+      ref={listRef}
       className="tabs"
       role="tablist"
       aria-label={label}
       onKeyDown={onKeyDown}
-      style={{ "--tab-count": options.length, "--tab-index": index } as CSSProperties}
+      style={{ "--thumb-x": `${thumb.x}px`, "--thumb-w": `${thumb.width}px` } as CSSProperties}
     >
       <span className="tabs__thumb" aria-hidden="true" />
       {options.map((option, position) => {
