@@ -103,7 +103,8 @@ export function TitleBar() {
 
   return (
     <header className="titlebar" data-mac={isMac ? "true" : "false"}>
-      {isMac ? controls : <span className="titlebar__mark" aria-hidden="true" />}
+      {isMac ? controls : null}
+      <span className="titlebar__mark" aria-hidden="true" />
       <span className="titlebar__name">Immich Desktop</span>
       <div className="titlebar__drag" data-tauri-drag-region />
       {isMac ? null : controls}
