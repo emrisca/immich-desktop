@@ -39,7 +39,7 @@ bash scripts/build-mac.sh            # --skip-ml leaves out the CLIP service
 
 `runtime/` holds the binaries a build runs: Node, PostgreSQL 17 with pgvector, FFmpeg, the
 patched Immich server, its web UI, the CLIP service and the workflow plugin. It is about
-1.2 GB and is not in the repository. Each platform assembles it from upstream.
+1.4 GB and is not in the repository. Each platform assembles it from upstream.
 
 ```sh
 node scripts/prepare-runtime-windows.mjs     # Windows
@@ -47,9 +47,9 @@ bash scripts/build-mac.sh                    # macOS: runtime, bundle, dmg
 ```
 
 On Windows the assembler needs Visual Studio Build Tools with the C++ workload, the same one
-the Rust MSVC toolchain needs. PostgreSQL's Windows binaries ship no pgvector, so the
-assembler compiles pgvector 0.8.7 against the Postgres tree it just unpacked. Skip that step
-and Immich's first migration fails on `CREATE EXTENSION vector`.
+the Rust MSVC toolchain needs. No Windows Postgres build ships pgvector, and only EnterpriseDB's
+ships `uuid-ossp`, so the assembler takes EDB's archive and compiles pgvector 0.8.7 against it.
+Miss either extension and Immich fails on the first migration or the first insert.
 
 `--skip-server`, `--skip-web`, `--skip-plugin`, `--skip-ml` and `--skip-models` assemble part
 of the tree. `--runtime <dir>` writes somewhere other than `runtime/`, which is what to use
@@ -78,7 +78,7 @@ src/ui/                 button, field, panel, switch, pill, tabs
 src/app/                titlebar, sidebar, overview, storage, backups, logs, phone card
 src-tauri/              the window and the supervisor: runtime, layout, import, watch, firewall, qr
   tauri.macos.conf.json   merged on a Mac only; the rest of the bundle config is shared
-scripts/                runtime assembler (macOS), plugin build (Windows), source packaging
+scripts/                runtime assemblers, plugin build, source packaging
 immich/                 the Immich patch and what each change fixes
 ml/                     CLIP service for smart search
 spike/                  M0 probes, and the results they produced
@@ -86,7 +86,11 @@ spike/                  M0 probes, and the results they produced
 
 ## State
 
-`cargo test` passes in `src-tauri`. The core plugin builds to `immich-plugin-core@2.0.1` with
-14 methods and three templates, and `wasm-opt` validates the wasm. Still unverified: a running
-server importing that plugin, because the test needs the whole runtime up against a real
-library.
+`cargo test` passes in `src-tauri`. The Windows assembler has been run end to end: it built the
+patched server, the web UI, the plugin and the CLIP service, and the app started every service
+from the result. The server imported `immich-plugin-core@2.0.1` with 14 methods and three
+templates, which is what the Workflows view lists. An existing library and its database also
+came up on the rebuilt runtime, without a reset.
+
+The macOS half is not verified here. This machine is Windows, so nothing on this side proves
+the Mac runtime, the Mac bundle or the onboarding form.

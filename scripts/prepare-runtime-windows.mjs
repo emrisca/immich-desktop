@@ -21,13 +21,13 @@
  *
  * Three things differ from macOS and each one is a way this can fail:
  *
- * 1. **The Postgres archive has no pgvector.** Theseus's Windows build ships the
- *    PostgreSQL tree and nothing else, so pgvector is compiled here with MSVC
- *    against that tree's headers (`include/server`) and import library
- *    (`lib/postgres.lib`). Without it, Immich's first migration fails on
- *    `CREATE EXTENSION vector` and the database sits on "Starting" forever.
- *    This needs Visual Studio Build Tools with the C++ workload, which is the
- *    same thing the Rust MSVC toolchain needs.
+ * 1. **No Postgres distribution for Windows has both extensions Immich needs.**
+ *    pgvector is not in any of them, so it is compiled here with MSVC against the
+ *    tree's headers (`include/server`) and import library (`lib/postgres.lib`).
+ *    `uuid-ossp` is in EnterpriseDB's build but not in Theseus's, and Immich's
+ *    schema uses it, so the Postgres source is EDB's; without it every insert that
+ *    defaults to `uuid_generate_v4()` fails. This needs Visual Studio Build Tools
+ *    with the C++ workload, the same one the Rust MSVC toolchain needs.
  *
  * 2. **There is no Homebrew to fall back on.** Every binary is a pinned download
  *    with a published checksum where the project publishes one, extracted with
@@ -39,7 +39,6 @@
  *    printed at the end so a release can record what it shipped.
  */
 import { execFileSync, spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
 import {
   copyFileSync,
   cpSync,
@@ -82,7 +81,7 @@ const option = (name, fallback) => {
 // top of the runtime the app runs from. Every option has to be understood.
 const KNOWN = new Set([
   "dry-run", "skip-server", "skip-web", "skip-plugin", "skip-ml", "skip-models",
-  "arch", "immich-ref", "node-major", "node-version", "pg-release", "pgvector-version",
+  "arch", "immich-ref", "node-major", "node-version", "pg-zip", "pgvector-version",
   "ffmpeg-zip", "runtime", "www-source",
 ]);
 for (const arg of argv) {
@@ -106,7 +105,18 @@ const arch = option("arch", process.arch === "arm64" ? "arm64" : "x64");
 const immichRef = option("immich-ref", IMMICH_REF);
 const nodeMajor = option("node-major", "v24.");
 const nodeVersion = option("node-version", null);
-const pgRelease = option("pg-release", "17.7.1");
+/// EnterpriseDB's binaries, not Theseus's. Theseus ships 49 extensions and Immich
+/// needs `uuid-ossp`, which Immich's schema uses for row identifiers: without it
+/// every insert that defaults to `uuid_generate_v4()` fails with
+/// `could not access file "$libdir/uuid-ossp"`, including the one that registers
+/// the workflow plugin. EDB ships 60 extensions and the `postgres.lib` that
+/// pgvector links against. EDB publishes SHA-256 values on its download page only,
+/// so this archive cannot be checksum-verified the way the Theseus one was; the
+/// version and the extension list are checked instead.
+const pgZip = option(
+  "pg-zip",
+  "https://get.enterprisedb.com/postgresql/postgresql-17.7-1-windows-x64-binaries.zip",
+);
 const pgvectorVersion = option("pgvector-version", "0.8.7");
 const ffmpegZip = option(
   "ffmpeg-zip",
@@ -137,27 +147,30 @@ function die(text) {
 const win = process.platform === "win32";
 const quote = (value) => (/[\s"]/.test(value) ? `"${value.replace(/"/g, '\\"')}"` : value);
 
-function sh(command, args, cwd = root, env = process.env, { capture = false } = {}) {
+function sh(command, args, cwd = root, env = process.env, { capture = false, allowFailure = false } = {}) {
   if (dryRun) {
     note(`would run: ${command} ${args.join(" ")}` + (cwd === root ? "" : `  (in ${path.relative(root, cwd)})`));
-    return "";
+    return allowFailure ? { status: 0, stdout: "", stderr: "" } : "";
   }
+  // On Windows, a bare name like `corepack` has to go through cmd so the PATH
+  // lookup finds `corepack.cmd`, and cmd resolves it without quoting, which works
+  // even when the shim lives under `C:\Program Files\nodejs`.
+  //
+  // An absolute path must not go through cmd: `cmd /s /c "C:\Program Files\…"`
+  // strips the outer quotes and then reads `C:\Program` as the command, which is
+  // the failure that broke the plugin step. Node passes an absolute path to
+  // CreateProcess itself, quoting it correctly.
   const line = [command, ...args].map(quote).join(" ");
-  const result = win
-    ? spawnSync(process.env.ComSpec ?? "cmd.exe", ["/d", "/s", "/c", line], {
-        cwd,
-        env,
-        stdio: capture ? ["ignore", "pipe", "inherit"] : "inherit",
-        encoding: "utf8",
-      })
-    : spawnSync(command, args, {
-        cwd,
-        env,
-        stdio: capture ? ["ignore", "pipe", "inherit"] : "inherit",
-        encoding: "utf8",
-      });
+  const viaShell = win && !path.isAbsolute(command);
+  const stdio = capture || allowFailure ? ["ignore", "pipe", "pipe"] : "inherit";
+  const result = viaShell
+    ? spawnSync(process.env.ComSpec ?? "cmd.exe", ["/d", "/s", "/c", line], { cwd, env, stdio, encoding: "utf8" })
+    : spawnSync(command, args, { cwd, env, stdio, encoding: "utf8" });
   if (result.error) {
     die(`${command} could not be started: ${result.error.message}`);
+  }
+  if (allowFailure) {
+    return { status: result.status, stdout: String(result.stdout ?? ""), stderr: String(result.stderr ?? "") };
   }
   if (result.status !== 0) {
     die(`${command} ${args.join(" ")} exited ${result.status}`);
@@ -196,24 +209,6 @@ async function download(url, destination) {
   await pipeline(Readable.fromWeb(response.body), createWriteStream(partial));
   renameSync(partial, destination);
   note(`${(statSync(destination).size / 1e6).toFixed(1)} MB`);
-}
-
-/// Theseus publishes `<asset>.sha256`; checking it is the difference between a
-/// truncated archive and a Postgres that fails `initdb` halfway through.
-async function verifyPublishedChecksum(url, file) {
-  if (dryRun) {
-    return;
-  }
-  const response = await fetch(`${url}.sha256`, { redirect: "follow" });
-  if (!response.ok) {
-    die(`could not fetch the checksum for ${path.basename(file)} (${response.status})`);
-  }
-  const want = (await response.text()).trim().split(/\s+/)[0].toLowerCase();
-  const got = createHash("sha256").update(readFileSync(file)).digest("hex");
-  if (!want || want !== got) {
-    die(`checksum mismatch for ${path.basename(file)}\n  expected ${want}\n  got      ${got}`);
-  }
-  note(`sha256 ok (${got.slice(0, 12)}…)`);
 }
 
 /// Windows' bsdtar, by absolute path. Git Bash's GNU tar is first on PATH and
@@ -347,33 +342,69 @@ function vcvars64() {
 }
 
 async function fetchPostgres() {
-  say(`PostgreSQL ${pgRelease} + pgvector ${pgvectorVersion}`);
-  const asset = `postgresql-${pgRelease}-${arch === "arm64" ? "aarch64" : "x86_64"}-pc-windows-msvc.zip`;
-  const url = `https://github.com/theseus-rs/postgresql-binaries/releases/download/${pgRelease}/${asset}`;
-  const saved = path.join(cache, asset);
-  await download(url, saved);
-  if (!dryRun) {
-    await verifyPublishedChecksum(url, saved);
+  say("PostgreSQL 17 (EnterpriseDB binaries) + pgvector");
+  if (arch !== "x64") {
+    die(
+      "EDB publishes Windows x64 binaries only." +
+        `  --arch ${arch} has no Postgres archive to download; use x64.`,
+    );
   }
+  const zipName = path.basename(new URL(pgZip).pathname);
+  const saved = path.join(cache, zipName);
+  await download(pgZip, saved);
 
   const target = path.join(runtime, "pg");
   if (dryRun) {
-    note(`would extract ${asset} into ${path.relative(root, target)}`);
-  } else {
-    const staging = path.join(cache, "pg-stage");
-    rmSync(staging, { recursive: true, force: true });
-    extract(saved, staging, { strip: true });
-    fresh(target);
-    for (const name of readdirSync(staging)) {
-      renameSync(path.join(staging, name), path.join(target, name));
-    }
-    if (!existsSync(path.join(target, "bin", "postgres.exe"))) {
-      die(`${asset} did not contain bin/postgres.exe`);
-    }
-    note(`${sh(path.join(target, "bin", "postgres.exe"), ["--version"], root, process.env, { capture: true })}`);
+    note(`would extract ${zipName} into .win-build/pg-stage`);
+    note("would compile pgvector against it, drop pgAdmin/StackBuilder/doc/include, then move to runtime/pg");
+    return;
   }
 
-  await buildPgvector(target);
+  const staging = path.join(cache, "pg-stage");
+  rmSync(staging, { recursive: true, force: true });
+  extract(saved, staging, { strip: true });
+  if (!existsSync(path.join(staging, "bin", "postgres.exe"))) {
+    die(`${zipName} did not contain bin/postgres.exe`);
+  }
+  note(sh(path.join(staging, "bin", "postgres.exe"), ["--version"], root, process.env, { capture: true }));
+
+  // pgvector links against the tree's import library and compiles against its
+  // server headers, so it has to build before `include/` is pruned.
+  await buildPgvector(staging);
+  prunePostgres(staging);
+
+  fresh(target);
+  for (const name of readdirSync(staging)) {
+    renameSync(path.join(staging, name), path.join(target, name));
+  }
+
+  for (const entry of [
+    "bin/postgres.exe",
+    "lib/postgres.lib",
+    "lib/uuid-ossp.dll",
+    "lib/vector.dll",
+    "share/extension/uuid-ossp.control",
+    "share/extension/vector.control",
+  ]) {
+    if (!existsSync(path.join(target, entry))) {
+      die(`${zipName} produced a runtime/pg without ${entry}`);
+    }
+  }
+  note(`${relRuntime()}/pg: PostgreSQL 17 with uuid-ossp and pgvector ${pgvectorVersion}`);
+}
+
+/// pgAdmin, StackBuilder, the docs and the headers are most of the archive and
+/// none of them run. Dropping them takes the tree from about 1 GB to 150 MB.
+function prunePostgres(tree) {
+  let bytes = 0;
+  for (const name of ["pgAdmin 4", "StackBuilder", "doc", "include"]) {
+    const dir = path.join(tree, name);
+    if (existsSync(dir)) {
+      bytes += directorySize(dir);
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+  note(`dropped pgAdmin/StackBuilder/doc/include (${Math.round(bytes / 1e6)} MB)`);
 }
 
 /// pgvector is not in any Windows binary distribution, so it is compiled from
@@ -450,7 +481,7 @@ async function buildPgvector(target) {
   if (declared !== pgvectorVersion) {
     note(`warning: vector.control declares ${declared}, expected ${pgvectorVersion}`);
   }
-  note(`${relRuntime()}/pg with pgvector ${declared} (${(statSync(dll).size / 1e3).toFixed(0)} KB dll)`);
+  note(`pgvector ${declared} built against the Postgres tree (${(statSync(dll).size / 1e3).toFixed(0)} KB dll)`);
 }
 
 // ── ffmpeg ───────────────────────────────────────────────────────────────────
@@ -512,7 +543,13 @@ function pnpmCommand() {
 
 function pnpm(args, cwd) {
   const { command, prefix } = pnpmCommand();
-  return sh(command, [...prefix, ...args], cwd, runtimeNodeEnv());
+  // Immich pins pnpm@11.27.1 in its own `packageManager`, and corepack will fetch
+  // that version when it is first used. Without this it waits for a confirmation
+  // prompt that an unattended build can never answer.
+  return sh(command, [...prefix, ...args], cwd, {
+    ...runtimeNodeEnv(),
+    COREPACK_ENABLE_DOWNLOAD_PROMPT: "0",
+  });
 }
 
 async function fetchServer() {
@@ -535,31 +572,62 @@ async function fetchServer() {
     note("reusing .win-build/immich");
   }
 
-  try {
-    sh("git", ["apply", "--check", patchFile], work);
+  // `--check` first, so a patch that no longer applies stops with a readable
+  // message instead of a half-compiled server. A checkout reused from an earlier
+  // run is already patched, and that is the normal case, not an error: the diff
+  // is what tells the two apart.
+  const check = sh("git", ["apply", "--check", patchFile], work, process.env, { allowFailure: true });
+  if (check.status === 0) {
     sh("git", ["apply", patchFile], work);
     note("applied the desktop patch");
-  } catch {
+  } else {
     const already = sh("git", ["diff", "--stat", "--", "server/src"], work, process.env, { capture: true });
     if (!already) {
       die(
-        `the patch does not apply to ${immichRef}.\n` +
-          `  Upstream moved. Re-apply it by hand and update ${path.relative(root, patchFile)}.`,
+        `the patch does not apply to ${immichRef}, and the checkout is not patched either.\n` +
+          `  Upstream moved. Re-apply it by hand and update ${path.relative(root, patchFile)}.\n` +
+          `  git said:\n${check.stderr.trim().split("\n").slice(0, 5).join("\n")}`,
       );
     }
-    note("patch already applied");
+    note("patch already applied in the reused checkout");
   }
 
   // The patch touches no dependency, so the lockfile is regenerated rather than
   // patched; `--frozen-lockfile` would fail on the Git-versioned one.
   pnpm(["install", "--no-frozen-lockfile"], work);
   // `immich...` builds the server and the workspace packages it imports.
-  pnpm(["--filter", "immich...", "build"], work);
+  //
+  // `verify-deps-before-run=false` matters on pnpm 11: before running a script it
+  // compares node_modules with the lockfile and, when they disagree, runs
+  // `pnpm install --prod` by itself. That install fails inside a workspace package
+  // and takes the build down with it, on a tree that builds perfectly well.
+  pnpm(["--config.verify-deps-before-run=false", "--filter", "immich...", "build"], work);
 
   const serverDir = path.join(runtime, "immich", "server");
   fresh(serverDir);
+  // `node-linker=hoisted` is not a preference, it is what makes the tree movable.
+  //
+  // pnpm's default deploy writes the server's dependencies as symlinks whose
+  // targets are the deploy directory by absolute path. Deploying to `runtime/`
+  // therefore produces a tree that only works at `runtime/`, and renaming or
+  // copying it dangles every link: 1,773 of them in the run that exposed this.
+  // Tauri then fails the bundle with "resource path … doesn't exist" on the first
+  // one it walks. A hoisted deploy writes real files, so the same tree can be
+  // renamed, bundled and installed.
   try {
-    pnpm(["--filter", "immich", "deploy", "--prod", "--legacy", serverDir], work);
+    pnpm(
+      [
+        "--config.node-linker=hoisted",
+        "--config.verify-deps-before-run=false",
+        "--filter",
+        "immich",
+        "deploy",
+        "--prod",
+        "--legacy",
+        serverDir,
+      ],
+      work,
+    );
   } catch {
     die(
       "pnpm deploy failed, so there is no self-contained server to ship.\n" +
@@ -580,7 +648,56 @@ async function fetchServer() {
   if (!existsSync(path.join(serverDir, "dist", "main.js"))) {
     die(`the server build produced no dist/main.js in ${serverDir}`);
   }
-  note(`${relRuntime()}/immich/server (dist + deployed node_modules)`);
+  // The invariant the bundle depends on, checked rather than assumed: a tree with
+  // a single symlink in it cannot be moved or packaged.
+  const links = countSymlinks(serverDir);
+  if (links > 0) {
+    die(
+      `the deployed server contains ${links} symlink(s), so it can only run where it was built.\n` +
+        "  pnpm deploy wrote links instead of files; check that node-linker=hoisted still applies.\n" +
+        `  Tauri fails the bundle on the first link it cannot resolve.`,
+    );
+  }
+  note(`${relRuntime()}/immich/server (dist + deployed node_modules, no links)`);
+}
+
+function directorySize(dir) {
+  let total = 0;
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      total += directorySize(full);
+    } else if (entry.isFile()) {
+      total += statSync(full).size;
+    }
+  }
+  return total;
+}
+
+/// Symlinks and Windows junctions both count: a junction whose target moved is as
+/// broken as a symlink, and Tauri's resource walker trips over either.
+function countSymlinks(dir) {
+  let found = 0;
+  const walk = (current) => {
+    let entries;
+    try {
+      entries = readdirSync(current, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const full = path.join(current, entry.name);
+      if (entry.isSymbolicLink()) {
+        found += 1;
+        continue;
+      }
+      if (entry.isDirectory()) {
+        walk(full);
+      }
+    }
+  };
+  walk(dir);
+  return found;
 }
 
 function cpRecursive(from, to) {
@@ -645,7 +762,8 @@ function fetchWeb() {
   if (!existsSync(path.join(work, "web"))) {
     die("the web source is missing; run without --skip-server first");
   }
-  pnpm(["--filter", "web", "build"], work);
+  // The package is `immich-web`; `--filter web` matches nothing.
+  pnpm(["--config.verify-deps-before-run=false", "--filter", "immich-web", "build"], work);
   const build = path.join(work, "web", "build");
   if (!existsSync(path.join(build, "index.html"))) {
     die(`the web build produced no index.html in ${build}`);

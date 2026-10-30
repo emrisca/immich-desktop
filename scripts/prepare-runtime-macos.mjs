@@ -491,7 +491,7 @@ async function fetchServer() {
   // `immich...` is "the server and the workspace packages it depends on". Plain
   // `--filter immich` builds only the server, whose `@immich/plugin-sdk`
   // import then fails: that package emits its `dist` from its own build script.
-  pnpm(["--filter", "immich...", "build"], immichWork);
+  pnpm(["--config.verify-deps-before-run=false", "--filter", "immich...", "build"], immichWork);
 
   const serverDir = path.join(runtime, "immich", "server");
   fresh(serverDir);
@@ -665,7 +665,11 @@ async function fetchWeb() {
     note("would build immich-web (pnpm --filter web build) and copy its output");
     return;
   }
-  pnpm(["--filter", "web", "build"], immichWork);
+  // The package is `immich-web`: `--filter web` matches nothing and the build
+  // then reports "No projects matched the filters" and copies nothing.
+  // `verify-deps-before-run=false` stops pnpm 11 comparing node_modules with the
+  // lockfile and running its own `install --prod`, which fails in a workspace.
+  pnpm(["--config.verify-deps-before-run=false", "--filter", "immich-web", "build"], immichWork);
   const build = path.join(immichWork, "web", "build");
   if (!existsSync(path.join(build, "index.html"))) {
     die(`the web build produced no index.html in ${build}`);

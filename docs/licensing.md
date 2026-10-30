@@ -35,8 +35,8 @@ than to pushing commits.
 | `immich-plugin-core` wasm | 2.0.1 | `packages/plugin-core`, built by the assemblers | AGPL-3.0 |
 | FFmpeg | gyan.dev essentials (9.0.2 when last assembled) | Windows: gyan.dev build. macOS: npm `ffmpeg-static` | **GPL-3.0** |
 | ffprobe | same release | Windows: gyan.dev. macOS: `@ffprobe-installer/ffprobe` (LGPL-2.1) | GPL-3.0 / LGPL-2.1 |
-| PostgreSQL | 17.7 | `theseus-rs/postgresql_binaries` | PostgreSQL Licence |
-| pgvector | bundled with the above | `share/extension/vector*` | PostgreSQL Licence |
+| PostgreSQL | 17.7 | EnterpriseDB Windows binaries | PostgreSQL Licence |
+| pgvector | 0.8.7, compiled by the assembler | `pgvector` source, built with MSVC | PostgreSQL Licence |
 | Node.js | 24.22.0 | nodejs.org | MIT |
 | CLIP model | `Xenova/clip-vit-base-patch32` | Hugging Face | MIT |
 | CLIP service deps | — | `@huggingface/transformers` Apache-2.0, `onnxruntime-node` MIT, `sharp` Apache-2.0, `busboy` MIT | permissive |
