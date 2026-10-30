@@ -7,7 +7,7 @@
 
 use std::fs;
 use std::io::{Read, Seek, SeekFrom};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use crate::layout::Layout;
 
@@ -163,7 +163,7 @@ fn plain(path: &Path) -> String {
 
 /// Kept for the tests, which need somewhere to write a fake log.
 #[cfg(test)]
-fn scratch(name: &str) -> PathBuf {
+fn scratch(name: &str) -> std::path::PathBuf {
     let dir = std::env::temp_dir().join(format!("immich-logs-{name}-{}", std::process::id()));
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(dir.join("immich").join("logs")).expect("scratch logs dir");
