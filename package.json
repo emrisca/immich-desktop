@@ -1,0 +1,29 @@
+{
+  "name": "immich-desktop",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "A Tauri shell that installs and runs a local Immich server, no Docker.",
+  "license": "AGPL-3.0-only",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "tauri": "tauri"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-dialog": "^2.8.4",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@vitejs/plugin-react": "^5",
+    "typescript": "^5",
+    "vite": "^7"
+  }
+}

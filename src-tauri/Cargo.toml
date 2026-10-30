@@ -1,0 +1,43 @@
+[package]
+name = "immich-desktop"
+version = "0.1.0"
+description = "A Tauri shell that runs a local Immich server without Docker"
+license = "AGPL-3.0-only"
+edition = "2021"
+rust-version = "1.77.2"
+
+[lib]
+name = "immich_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri-plugin-single-instance = "2"
+tauri-plugin-dialog = "2.7.3"
+# `src/qr.rs` draws the phone-access code on every platform, so this cannot be a
+# Windows-only dependency: it used to sit in the target section below, where only
+# the Windows build ever linked it, and the macOS build failed on it.
+qrcode = { version = "0.14", default-features = false }
+
+# Elevating the firewall rule. ShellExecuteW rather than a PowerShell one-liner:
+# an unsigned app spawning `powershell -EncodedCommand` at startup is the shape
+# Windows Defender deletes as Trojan:PowerShell/Powdow, and it did exactly that.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+  "Win32_UI_Shell",
+  "Win32_UI_WindowsAndMessaging",
+] }
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true
+
+[dev-dependencies]
+rqrr = { version = "0.9", default-features = false }

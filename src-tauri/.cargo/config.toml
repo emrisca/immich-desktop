@@ -1,0 +1,19 @@
+# Platform: WINDOWS in content, inert everywhere else — every setting below is
+# scoped to an MSVC target. Nothing in this file changes a macOS or Linux build.
+# The platform map is ../PLATFORMS.md.
+#
+# The machine's default Rust toolchain is the GNU one, which cannot link Tauri's
+# Windows crates here (its `dlltool` is missing), so a clean build fails with
+# "error calling dlltool". `rust-toolchain.toml` pins the MSVC toolchain, which
+# makes MSVC the host triple — so the target below is the default on Windows
+# without being written down here.
+#
+# It used to be `[build] target = "x86_64-pc-windows-msvc"`. That is fatal on a
+# Mac: cargo would try to build for Windows and stop before compiling anything.
+# Keep platform-specific *tools* here, never a platform-wide target.
+#
+# A static CRT means the exe needs no Visual C++ redistributable on the machine
+# it is installed on. This section only applies when targeting MSVC, so it is
+# inert on macOS and Linux.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

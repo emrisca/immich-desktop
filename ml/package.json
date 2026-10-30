@@ -1,0 +1,18 @@
+{
+  "name": "immich-desktop-ml",
+  "private": true,
+  "type": "module",
+  "description": "CLIP embeddings for the bundled Immich server, so smart search works with no Python.",
+  "license": "AGPL-3.0-only",
+  "main": "index.mjs",
+  "dependencies": {
+    "@huggingface/transformers": "^3.7.5",
+    "busboy": "^1.6.0",
+    "sharp": "^0.34.4"
+  },
+  "allowScripts": {
+    "onnxruntime-node@1.21.0": true,
+    "sharp@0.34.5": true,
+    "protobufjs@7.6.6": true
+  }
+}

@@ -1,0 +1,1013 @@
+diff --git a/server/src/app.module.ts b/server/src/app.module.ts
+index 83bf211..b4545d1 100644
+--- a/server/src/app.module.ts
++++ b/server/src/app.module.ts
+@@ -1,4 +1,3 @@
+-import { BullModule } from '@nestjs/bullmq';
+ import { Inject, Module, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+ import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR, APP_PIPE } from '@nestjs/core';
+ import { ScheduleModule, SchedulerRegistry } from '@nestjs/schedule';
+@@ -22,6 +21,7 @@ import { GlobalExceptionFilter } from 'src/middleware/global-exception.filter.js
+ import { LoggingInterceptor } from 'src/middleware/logging.interceptor.js';
+ import { AppRepository } from 'src/repositories/app.repository.js';
+ import { ConfigRepository } from 'src/repositories/config.repository.js';
++import { LocalQueueModule } from 'src/repositories/local-queue.repository.js';
+ import { DatabaseRepository } from 'src/repositories/database.repository.js';
+ import { EventRepository } from 'src/repositories/event.repository.js';
+ import { repositories } from 'src/repositories/index.js';
+@@ -61,7 +61,13 @@ const commonImports = [
+   OpenTelemetryModule.forRoot(otel),
+ ];
+ 
+-const bullImports = [BullModule.forRoot(bull.config), BullModule.registerQueue(...bull.queues)];
++// SPIKE: Postgres-backed queue instead of BullMQ + Redis.
++const bullImports = [
++  LocalQueueModule.forQueues(
++    bull.queues.flatMap((queue) => (queue.name ? [queue.name] : [])),
++    database.config,
++  ),
++];
+ 
+ // eslint-disable-next-line unicorn/no-top-level-side-effects
+ configureUserAgent();
+diff --git a/server/src/dtos/env.dto.ts b/server/src/dtos/env.dto.ts
+index 71658a6..c608e91 100644
+--- a/server/src/dtos/env.dto.ts
++++ b/server/src/dtos/env.dto.ts
+@@ -1,3 +1,4 @@
++import { isAbsolute } from 'node:path';
+ import z from 'zod';
+ import { ImmichEnvironmentSchema, LogFormatSchema, LogLevelSchema } from 'src/enum.js';
+ import { IsIPRange } from 'src/validation.js';
+@@ -12,7 +13,12 @@ enum DatabaseSslMode {
+ }
+ 
+ const DatabaseSslModeSchema = z.enum(DatabaseSslMode).describe('Database SSL mode').meta({ id: 'DatabaseSslMode' });
+-const absolutePath = z.string().regex(/^\//, 'Must be an absolute path').optional();
++// SPIKE: the upstream check is POSIX-only (`/^\//`), which rejects every native
++// Windows path. isAbsolute() accepts C:\\..., //server/share and /posix.
++const absolutePath = z
++  .string()
++  .refine((value) => isAbsolute(value), 'Must be an absolute path')
++  .optional();
+ /**
+  * Treat certain strings as booleans and coerce them to boolean
+  * Ideal for environment variables that are strings but should be treated as booleans
+diff --git a/server/src/main.ts b/server/src/main.ts
+index f1027b7..5bfa0fb 100644
+--- a/server/src/main.ts
++++ b/server/src/main.ts
+@@ -2,6 +2,7 @@ import { Kysely, sql } from 'kysely';
+ import { CommandFactory } from 'nest-commander';
+ import { ChildProcess, fork } from 'node:child_process';
+ import { dirname, join } from 'node:path';
++import { pathToFileURL } from 'node:url';
+ import { Worker } from 'node:worker_threads';
+ import { PostgresError } from 'postgres';
+ import { DatabaseLock, ExitCode, ImmichWorker, LogLevel, SystemMetadataKey } from 'src/enum.js';
+@@ -113,7 +114,8 @@ class Workers {
+       // eslint-disable-next-line unicorn/prefer-hoisting-branch-code
+       anyWorker = worker;
+     } else {
+-      const worker = new Worker(workerFile);
++      // SPIKE: a bare Windows path (C:\\...) is parsed as a URL scheme here.
++      const worker = new Worker(pathToFileURL(workerFile));
+ 
+       kill = async () => void (await worker.terminate());
+       anyWorker = worker;
+diff --git a/server/src/middleware/websocket.adapter.ts b/server/src/middleware/websocket.adapter.ts
+index cedaabc..a7e4b4d 100644
+--- a/server/src/middleware/websocket.adapter.ts
++++ b/server/src/middleware/websocket.adapter.ts
+@@ -11,11 +11,8 @@ export class WebSocketAdapter extends IoAdapter {
+   }
+ 
+   createIOServer(port: number, options?: ServerOptions): any {
+-    const { redis } = this.app.get(ConfigRepository).getEnv();
+-    const server = super.createIOServer(port, options);
+-    const pubClient = new Redis(redis);
+-    const subClient = pubClient.duplicate();
+-    server.adapter(createAdapter(pubClient, subClient));
+-    return server;
++    // SPIKE: the Redis adapter fans events out between containers. A desktop
++    // install has one process, so the default in-memory adapter is correct.
++    return super.createIOServer(port, options);
+   }
+ }
+diff --git a/server/src/repositories/database.repository.ts b/server/src/repositories/database.repository.ts
+index 37860b2..a2c9a20 100644
+--- a/server/src/repositories/database.repository.ts
++++ b/server/src/repositories/database.repository.ts
+@@ -2,6 +2,7 @@ import { schemaDiff, schemaFromCode, schemaFromDatabase } from '@immich/sql-tool
+ import { Injectable } from '@nestjs/common';
+ import AsyncLock from 'async-lock';
+ import { Kysely, sql } from 'kysely';
++import { pathToFileURL } from 'node:url';
+ import { FileMigrationProvider, Migrator } from 'kysely/migration';
+ import { InjectKysely } from 'nestjs-kysely';
+ import { readdir } from 'node:fs/promises';
+@@ -507,7 +508,7 @@ export class DatabaseRepository {
+       provider: new FileMigrationProvider({
+         fs: { readdir },
+         path: { join },
+-        import: (filePath) => import(filePath),
++        import: (filePath) => import(pathToFileURL(filePath).href),
+         migrationFolder: join(import.meta.dirname, '..', 'schema/migrations'),
+       }),
+     });
+diff --git a/server/src/repositories/job.repository.ts b/server/src/repositories/job.repository.ts
+index 77bb308..c3b600e 100644
+--- a/server/src/repositories/job.repository.ts
++++ b/server/src/repositories/job.repository.ts
+@@ -1,13 +1,14 @@
+ import { getQueueToken } from '@nestjs/bullmq';
+ import { Injectable } from '@nestjs/common';
+ import { ModuleRef, Reflector } from '@nestjs/core';
+-import { JobsOptions, Queue, Worker } from 'bullmq';
++import { JobsOptions } from 'bullmq';
+ import { setTimeout } from 'node:timers/promises';
+ import type { JobCounts, JobItem, JobOf } from 'src/types.js';
+ import { JobConfig } from 'src/decorators.js';
+ import { QueueJobResponseDto, QueueJobSearchDto } from 'src/dtos/queue.dto.js';
+ import { ImmichWorker, JobName, JobStatus, MetadataKey, QueueCleanType, QueueJobStatus, QueueName } from 'src/enum.js';
+ import { ConfigRepository } from 'src/repositories/config.repository.js';
++import { LocalQueue, LocalWorker } from 'src/repositories/local-queue.repository.js';
+ import { EventRepository } from 'src/repositories/event.repository.js';
+ import { LoggingRepository } from 'src/repositories/logging.repository.js';
+ import { ImmichStartupError, getKeyByValue, getMethodNames } from 'src/utils/misc.js';
+@@ -23,7 +24,7 @@ const WORKER_WATCH_INTERVAL_MS = 30_000;
+ 
+ @Injectable()
+ export class JobRepository {
+-  private workers: Partial<Record<QueueName, Worker>> = {};
++  private workers: Partial<Record<QueueName, LocalWorker>> = {};
+   private handlers: Partial<Record<JobName, JobMapItem>> = {};
+   private workerWatcher?: ReturnType<typeof setInterval>;
+   private microservicesPresent = true;
+@@ -88,13 +89,12 @@ export class JobRepository {
+   }
+ 
+   startWorkers() {
+-    const { bull } = this.configRepository.getEnv();
+     for (const queueName of Object.values(QueueName)) {
+       this.logger.debug(`Starting worker for queue: ${queueName}`);
+-      this.workers[queueName] = new Worker(
+-        queueName,
+-        (job) => this.eventRepository.emit('JobRun', queueName, job as JobItem),
+-        { ...bull.config, concurrency: 1, name: ImmichWorker.Microservices },
++      this.workers[queueName] = new LocalWorker(
++        this.getQueue(queueName),
++        (job) => this.eventRepository.emit('JobRun', queueName, job as unknown as JobItem),
++        { concurrency: 1 },
+       );
+     }
+   }
+@@ -283,8 +283,8 @@ export class JobRepository {
+     }
+   }
+ 
+-  private getQueue(queue: QueueName): Queue {
+-    return this.moduleRef.get<Queue>(getQueueToken(queue), { strict: false });
++  private getQueue(queue: QueueName): LocalQueue {
++    return this.moduleRef.get<LocalQueue>(getQueueToken(queue), { strict: false });
+   }
+ 
+   /** @deprecated */
+diff --git a/server/src/repositories/map.repository.ts b/server/src/repositories/map.repository.ts
+index d797c8c..f69c5b1 100644
+--- a/server/src/repositories/map.repository.ts
++++ b/server/src/repositories/map.repository.ts
+@@ -227,7 +227,12 @@ export class MapRepository {
+     const { resourcePaths } = this.configRepository.getEnv();
+     const filePath = resourcePaths.geodata.countryInfo;
+     if (!existsSync(filePath)) {
+-      throw new Error(`Geodata file ${filePath} not found`);
++      // SPIKE: the geodata set ships in Immich's Docker image and is not part of
++      // this runtime. Throwing here failed the whole metadata job for every photo
++      // with GPS, which also stripped videos of the dimensions thumbnails need.
++      // Without names, assets simply carry no city/state/country.
++      this.logger.warn(`Geodata file ${filePath} not found; reverse geocoding is off`);
++      return { byAlpha2, byAlpha3 };
+     }
+ 
+     const lineReader = readLine.createInterface({ input: createReadStream(filePath) });
+diff --git a/server/src/repositories/media.repository.ts b/server/src/repositories/media.repository.ts
+index 9057087..25e64aa 100644
+--- a/server/src/repositories/media.repository.ts
++++ b/server/src/repositories/media.repository.ts
+@@ -48,6 +48,12 @@ const probe = (input: string, options: string[]): Promise<FfprobeData> =>
+ 
+ const pascalCase = (str: string) => upperFirst(camelCase(str.toLowerCase()));
+ 
++/** A HEIF file starts with an `ftyp` box whose brand names the codec family. */
++const isHeifBuffer = (input: Buffer) =>
++  input.length > 12 &&
++  input.toString('ascii', 4, 8) === 'ftyp' &&
++  ['heic', 'heix', 'heim', 'heis', 'hevc', 'hevx', 'mif1', 'msf1'].includes(input.toString('ascii', 8, 12));
++
+ type ProgressEvent = {
+   frames: number;
+   currentFps: number;
+@@ -151,10 +157,55 @@ export class MediaRepository {
+   }
+ 
+   async decodeImage(input: string | Buffer, options: DecodeToBufferOptions): Promise<Bitmap> {
+-    const decoded = await this.getImageDecodingPipeline(input, options).raw().toBuffer({ resolveWithObject: true });
++    const source = await this.decodeHeif(input);
++    const decoded = await this.getImageDecodingPipeline(source, options).raw().toBuffer({ resolveWithObject: true });
+     return await this.transform(decoded, options);
+   }
+ 
++  /**
++   * libvips as shipped in sharp's Windows build has libheif without an HEVC
++   * decoder, so every HEIC photo fails the thumbnail job with "Support for this
++   * compression format has not been built in: HEVC". ffmpeg decodes HEVC, so
++   * hand sharp a JPEG of the frame instead of the HEIC itself.
++   *
++   * `-noautorotate` matters: the caller applies the EXIF orientation, and ffmpeg
++   * rotating too would leave those photos sideways.
++   */
++  private async decodeHeif(input: string | Buffer): Promise<string | Buffer> {
++    const isHeif = typeof input === 'string' ? /\.(heic|heif)$/i.test(input) : isHeifBuffer(input);
++    if (!isHeif) {
++      return input;
++    }
++
++    const args = ['-hide_banner', '-loglevel', 'error', '-noautorotate'];
++    if (typeof input === 'string') {
++      args.push('-i', input);
++    } else {
++      args.push('-i', 'pipe:0');
++    }
++    args.push('-frames:v', '1', '-f', 'image2', '-c:v', 'mjpeg', '-q:v', '1', 'pipe:1');
++
++    const jpeg = await new Promise<Buffer>((resolve, reject) => {
++      const child = spawn(process.env.FFMPEG_PATH || 'ffmpeg', args);
++      const chunks: Buffer[] = [];
++      let stderr = '';
++      child.stdout.on('data', (chunk) => chunks.push(chunk));
++      child.stderr.on('data', (chunk) => (stderr += chunk));
++      child.on('error', reject);
++      child.on('close', (code) => {
++        if (code === 0 && chunks.length > 0) {
++          return resolve(Buffer.concat(chunks));
++        }
++        reject(new Error(`ffmpeg could not decode the HEIC: ${stderr.trim() || `exited ${code}`}`));
++      });
++      if (typeof input !== 'string') {
++        child.stdin.end(input);
++      }
++    });
++
++    return jpeg;
++  }
++
+   private edit(pipeline: Sharp, edits: AssetEditActionItem[]): Sharp {
+     const crop = edits.find((edit) => edit.action === 'crop');
+     if (crop) {
+@@ -433,7 +484,11 @@ export class MediaRepository {
+   }
+ 
+   async getImageMetadata(input: string | Buffer): Promise<ImageDimensions & { isTransparent: boolean }> {
+-    const { width = 0, height = 0, hasAlpha = false } = await sharp(input, { unlimited: true }).metadata();
++    // Same HEVC gap as the thumbnail path: sharp cannot read a HEIC at all here,
++    // so its dimensions would otherwise be stored as 0 and the timeline would
++    // lay the photo out at the wrong aspect ratio.
++    const source = await this.decodeHeif(input);
++    const { width = 0, height = 0, hasAlpha = false } = await sharp(source, { unlimited: true }).metadata();
+     return { width, height, isTransparent: hasAlpha };
+   }
+ 
+diff --git a/server/src/services/metadata.service.ts b/server/src/services/metadata.service.ts
+index e1c1bee..eeb145a 100644
+--- a/server/src/services/metadata.service.ts
++++ b/server/src/services/metadata.service.ts
+@@ -163,12 +163,15 @@ export class MetadataService extends BaseService {
+     try {
+       await this.jobRepository.pause(QueueName.MetadataExtraction);
+       await this.databaseRepository.withLock(DatabaseLock.GeodataImport, () => this.mapRepository.init());
+-      await this.jobRepository.resume(QueueName.MetadataExtraction);
+ 
+       this.logger.log(`Initialized local reverse geocoder`);
+     } catch (error: Error | any) {
+-      this.logger.error(`Unable to initialize reverse geocoding: ${error}`, error?.stack);
+-      throw new Error('Metadata service init failed', { cause: error });
++      // SPIKE: geodata ships in the Docker image's /build/geodata. Without it,
++      // reverse geocoding is unavailable; everything else still works.
++      this.logger.warn(`Reverse geocoding unavailable (geodata missing): ${error?.message ?? error}`);
++    } finally {
++      // Must always unpause, or every metadata job sits in the queue forever.
++      await this.jobRepository.resume(QueueName.MetadataExtraction);
+     }
+   }
+ 
+diff --git a/server/src/utils/media.ts b/server/src/utils/media.ts
+index 0d92aeb..e8fd5c7 100644
+--- a/server/src/utils/media.ts
++++ b/server/src/utils/media.ts
+@@ -1,3 +1,4 @@
++import { spawnSync } from 'node:child_process';
+ import type {
+   AudioStreamInfo,
+   BitrateDistribution,
+@@ -29,6 +30,20 @@ import {
+   VideoCodec,
+ } from 'src/enum.js';
+ 
++/** Immich's Docker image ships an ffmpeg with `tonemapx`; stock builds do not. */
++let tonemapxSupport: boolean | undefined;
++const supportsTonemapx = () => {
++  if (tonemapxSupport === undefined) {
++    try {
++      const result = spawnSync(process.env.FFMPEG_PATH || 'ffmpeg', ['-hide_banner', '-filters'], { encoding: 'utf8' });
++      tonemapxSupport = /\stonemapx\s/.test(result.stdout ?? '');
++    } catch {
++      tonemapxSupport = false;
++    }
++  }
++  return tonemapxSupport;
++};
++
+ export const isVideoRotated = (videoStream: VideoStreamInfo): boolean => Math.abs(videoStream.rotation) === 90;
+ 
+ // whether the video is portrait once its rotation is applied
+@@ -359,6 +374,11 @@ export class BaseConfig implements VideoCodecSWConfig {
+   shouldToneMap(videoStream: VideoStreamInfo) {
+     return (
+       this.config.tonemap !== ToneMapping.Disabled &&
++      // SPIKE: `tonemapx` exists only in Immich's own ffmpeg build. Stock ffmpeg
++      // aborts the whole job with "No such filter: 'tonemapx'", which is every
++      // HDR video on a phone. Skipping the conversion keeps the thumbnail (a
++      // little washed out) instead of losing it entirely.
++      supportsTonemapx() &&
+       (videoStream.colorTransfer === ColorTransfer.Smpte2084 || videoStream.colorTransfer === ColorTransfer.AribStdB67)
+     );
+   }
+diff --git a/server/src/repositories/local-queue.repository.ts b/server/src/repositories/local-queue.repository.ts
+new file mode 100644
+index 0000000..d671bc7
+--- /dev/null
++++ b/server/src/repositories/local-queue.repository.ts
+@@ -0,0 +1,662 @@
++// SPIKE ONLY — replaces BullMQ + Redis with a Postgres-backed queue.
++//
++// Immich uses BullMQ for job transport, which needs a Redis-compatible server.
++// This module implements the surface `JobRepository` uses (add/addBulk/
++// getJobCounts/... plus a Worker) over three tables in the app's own database:
++//
++//   local_queue_job     one row per job; claiming is `FOR UPDATE SKIP LOCKED`
++//   local_queue_state   per-queue paused flag
++//   local_queue_worker  live worker registrations, refreshed by heartbeat
++//
++// Jobs are rows, so they outlive the process. A crash leaves `active` rows whose
++// worker registration has gone stale; `sweep()` puts those back in the queue and
++// the next claim re-runs them (at-least-once). Claiming is a single conditional
++// UPDATE, so several processes can share the table — the desktop launcher runs
++// one, but nothing here depends on that.
++//
++// No LISTEN/NOTIFY: enqueues in this process wake the worker directly, and a 1s
++// poll covers delayed jobs and any other process. Not implemented: repeatable
++// (cron) jobs — Immich v3.3.5 does not create any — and rate limiting.
++import { getQueueToken } from '@nestjs/bullmq';
++import { Module, type DynamicModule, type OnModuleDestroy } from '@nestjs/common';
++import type { DatabaseConnectionParams } from '@immich/sql-tools';
++import type { JobsOptions } from 'bullmq';
++import { randomUUID } from 'node:crypto';
++import postgres, { type Sql } from 'postgres';
++
++type RowStatus = 'waiting' | 'active' | 'completed' | 'failed';
++type JobStatusName = RowStatus | 'delayed';
++
++export type LocalJob = {
++  id: string;
++  name: string;
++  data: any;
++  timestamp: number;
++  opts: JobsOptions;
++  status: JobStatusName;
++  attemptsMade: number;
++  returnvalue?: any;
++  failedReason?: string;
++  finishedOn?: number;
++  remove: () => Promise<void>;
++};
++
++type JobRow = {
++  id: string;
++  name: string;
++  data: any;
++  opts: JobsOptions;
++  status: RowStatus;
++  run_at: Date;
++  attempts: number;
++  max_attempts: number;
++  created_on: Date;
++  finished_on: Date | null;
++  returnvalue: any;
++  failed_reason: string | null;
++};
++
++type JobHandler = (job: LocalJob) => Promise<any>;
++
++// An active job is orphaned when its worker stopped heartbeating. Three missed
++// beats, so a slow job (a large video transcode) is never stolen from a live worker.
++const HEARTBEAT_MS = 5000;
++const SWEEP_MS = 5000;
++const STALE_SECONDS = 15;
++const POLL_MS = 1000;
++
++const SCHEMA = [
++  `CREATE TABLE IF NOT EXISTS local_queue_job (
++  seq           bigint      GENERATED ALWAYS AS IDENTITY,
++  queue         text        NOT NULL,
++  id            text        NOT NULL,
++  name          text        NOT NULL,
++  data          jsonb       NOT NULL DEFAULT '{}'::jsonb,
++  opts          jsonb       NOT NULL DEFAULT '{}'::jsonb,
++  status        text        NOT NULL,
++  priority      integer,
++  run_at        timestamptz NOT NULL DEFAULT now(),
++  attempts      integer     NOT NULL DEFAULT 0,
++  max_attempts  integer     NOT NULL DEFAULT 1,
++  dedupe_id     text,
++  owner         text,
++  heartbeat_on  timestamptz,
++  created_on    timestamptz NOT NULL DEFAULT now(),
++  finished_on   timestamptz,
++    returnvalue   jsonb,
++    failed_reason text,
++    PRIMARY KEY (queue, id)
++  )`,
++  // `seq` keeps bulk inserts in insertion order, so claiming is FIFO per priority.
++  `CREATE INDEX IF NOT EXISTS local_queue_job_pending ON local_queue_job (queue, priority, seq)
++    WHERE status = 'waiting'`,
++  `CREATE INDEX IF NOT EXISTS local_queue_job_done ON local_queue_job (queue, status, finished_on)`,
++  `CREATE UNIQUE INDEX IF NOT EXISTS local_queue_job_dedupe ON local_queue_job (queue, dedupe_id)
++    WHERE dedupe_id IS NOT NULL AND status IN ('waiting', 'active')`,
++  `CREATE TABLE IF NOT EXISTS local_queue_state (
++    queue  text    PRIMARY KEY,
++    paused boolean NOT NULL DEFAULT false
++  )`,
++  `CREATE TABLE IF NOT EXISTS local_queue_worker (
++    queue        text        NOT NULL,
++    owner        text        NOT NULL,
++    name         text        NOT NULL,
++    heartbeat_on timestamptz NOT NULL DEFAULT now(),
++    PRIMARY KEY (queue, owner)
++  )`,
++];
++
++// Same driver the app's Kysely layer uses. Idle sockets are closed so the app
++// can exit without an explicit pool shutdown.
++const createSql = (params: DatabaseConnectionParams): Sql => {
++  const options = { max: 4, idle_timeout: 10, connect_timeout: 10, onnotice: () => {} };
++  if (params.connectionType === 'url') {
++    return postgres(params.url, options);
++  }
++  const { ssl } = params;
++  return postgres({
++    ...options,
++    host: params.host,
++    port: params.port,
++    username: params.username,
++    password: params.password,
++    database: params.database,
++    ssl: ssl && ssl !== 'disable' ? { rejectUnauthorized: ssl !== 'verify-full' } : false,
++  });
++};
++
++const toLocalJob = (queue: LocalQueue, row: JobRow): LocalJob => ({
++  id: row.id,
++  name: row.name,
++  data: row.data,
++  timestamp: row.created_on.getTime(),
++  opts: row.opts ?? {},
++  status: row.status === 'waiting' && row.run_at.getTime() > Date.now() ? 'delayed' : row.status,
++  attemptsMade: row.attempts,
++  returnvalue: row.returnvalue,
++  failedReason: row.failed_reason ?? undefined,
++  finishedOn: row.finished_on?.getTime(),
++  remove: () => queue.removeJob(row.id),
++});
++
++// Schema creation is shared: nine queues booting at once must not race on DDL.
++let schemaReady: Promise<void> | undefined;
++
++const ensureSchema = async (sql: Sql): Promise<void> => {
++  schemaReady ??= (async () => {
++    for (const statement of SCHEMA) {
++      await sql.unsafe(statement);
++    }
++  })();
++  await schemaReady;
++};
++
++const backoffSeconds = (job: LocalJob): number => {
++  const backoff = job.opts.backoff;
++  if (!backoff) {
++    return 0;
++  }
++  if (typeof backoff === 'number') {
++    return backoff / 1000;
++  }
++  const delay = backoff.delay ?? 0;
++  if (backoff.type === 'exponential') {
++    return (delay * 2 ** Math.max(0, job.attemptsMade - 1)) / 1000;
++  }
++  return delay / 1000;
++};
++
++export class LocalQueue implements OnModuleDestroy {
++  readonly name: string;
++  private readonly owner = randomUUID();
++  private readonly listeners = new Set<() => void>();
++
++  constructor(
++    private readonly sql: Sql,
++    name: string,
++  ) {
++    this.name = name;
++  }
++
++  private async q<T>(text: string, values: unknown[] = []): Promise<T[]> {
++    await ensureSchema(this.sql);
++    const rows = await this.sql.unsafe(text, values as any[]);
++    return rows as unknown as T[];
++  }
++
++  onWork(fn: () => void) {
++    this.listeners.add(fn);
++    return () => {
++      this.listeners.delete(fn);
++    };
++  }
++
++  private notifyWorkers() {
++    for (const listener of this.listeners) {
++      listener();
++    }
++  }
++
++  private async findExisting(id: string, dedupeId: string | null) {
++    const rows = await this.q<JobRow>(
++      `SELECT * FROM local_queue_job
++        WHERE queue = $1 AND (id = $2 OR ($3::text IS NOT NULL AND dedupe_id = $3::text))
++        ORDER BY created_on
++        LIMIT 1`,
++      [this.name, id, dedupeId],
++    );
++    return rows[0];
++  }
++
++  async add(name: string, data: any, opts: JobsOptions = {}): Promise<LocalJob> {
++    const id = opts.jobId || randomUUID();
++    const dedupeId = opts.deduplication?.id ?? null;
++
++    if (opts.jobId || dedupeId) {
++      const existing = await this.findExisting(id, dedupeId);
++      if (existing) {
++        if (existing.status !== 'failed') {
++          return toLocalJob(this, existing);
++        }
++        // A failed job stays in the table for the UI; re-queuing it reuses the id.
++        await this.removeJob(existing.id);
++      }
++    }
++
++    const rows = await this.q<JobRow>(
++      `INSERT INTO local_queue_job (queue, id, name, data, opts, status, priority, run_at, max_attempts, dedupe_id)
++       VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, 'waiting', $6, now() + make_interval(secs => $7), $8, $9)
++       ON CONFLICT DO NOTHING
++       RETURNING *`,
++      // Values go through the driver's JSON serialiser; pre-stringifying them
++      // would store a JSON string instead of an object.
++      [
++        this.name,
++        id,
++        name,
++        data ?? {},
++        opts ?? {},
++        opts.priority ?? null,
++        Math.max(0, opts.delay ?? 0) / 1000,
++        opts.attempts ?? 1,
++        dedupeId,
++      ],
++    );
++
++    const row = rows[0];
++    if (!row) {
++      // Lost a race against another writer holding the id or the dedupe key.
++      const other = await this.findExisting(id, dedupeId);
++      if (!other) {
++        throw new Error(`Unable to enqueue job "${name}"`);
++      }
++      return toLocalJob(this, other);
++    }
++
++    this.notifyWorkers();
++    return toLocalJob(this, row);
++  }
++
++  async addBulk(items: { name: string; data: any; options?: JobsOptions }[]): Promise<LocalJob[]> {
++    if (items.length === 0) {
++      return [];
++    }
++
++    // One round trip for the whole batch. The caller only does this when no job
++    // has a jobId or dedupe key (see JobRepository.queueAll), so no conflict
++    // handling is needed here.
++    const rows = await this.q<JobRow>(
++      `INSERT INTO local_queue_job (queue, id, name, data, opts, status, priority, run_at, max_attempts)
++       SELECT $1, job->>'id', job->>'name', job->'data', job->'opts', 'waiting',
++              (job->>'priority')::int,
++              now() + make_interval(secs => (job->>'delay')::double precision),
++              (job->>'maxAttempts')::int
++         FROM jsonb_array_elements($2::jsonb) AS job
++       RETURNING *`,
++      [
++        this.name,
++        items.map((item) => ({
++          id: randomUUID(),
++          name: item.name,
++          data: item.data ?? {},
++          opts: item.options ?? {},
++          priority: item.options?.priority ?? null,
++          delay: Math.max(0, item.options?.delay ?? 0) / 1000,
++          maxAttempts: item.options?.attempts ?? 1,
++        })),
++      ],
++    );
++
++    this.notifyWorkers();
++    return rows.map((row) => toLocalJob(this, row));
++  }
++
++  async getActiveCount(): Promise<number> {
++    const rows = await this.q<{ count: number }>(
++      `SELECT count(*)::int AS count FROM local_queue_job WHERE queue = $1 AND status = 'active'`,
++      [this.name],
++    );
++    return rows[0]?.count ?? 0;
++  }
++
++  async isPaused(): Promise<boolean> {
++    const rows = await this.q<{ paused: boolean }>(`SELECT paused FROM local_queue_state WHERE queue = $1`, [
++      this.name,
++    ]);
++    return rows[0]?.paused ?? false;
++  }
++
++  async pause(): Promise<void> {
++    await this.q(
++      `INSERT INTO local_queue_state (queue, paused) VALUES ($1, true)
++       ON CONFLICT (queue) DO UPDATE SET paused = true`,
++      [this.name],
++    );
++  }
++
++  async resume(): Promise<void> {
++    await this.q(
++      `INSERT INTO local_queue_state (queue, paused) VALUES ($1, false)
++       ON CONFLICT (queue) DO UPDATE SET paused = false`,
++      [this.name],
++    );
++    this.notifyWorkers();
++  }
++
++  async drain(): Promise<void> {
++    await this.q(`DELETE FROM local_queue_job WHERE queue = $1 AND status = 'waiting'`, [this.name]);
++  }
++
++  async clean(grace: number, limit: number, type?: string): Promise<string[]> {
++    const statuses = type === 'failed' || type === 'completed' ? [type] : ['completed', 'failed'];
++    const rows = await this.q<{ id: string }>(
++      `DELETE FROM local_queue_job
++        WHERE queue = $1
++          AND status = ANY($2::text[])
++          AND finished_on < now() - make_interval(secs => $3)
++          AND id IN (
++            SELECT id FROM local_queue_job WHERE queue = $1 AND status = ANY($2::text[]) LIMIT $4
++          )
++        RETURNING id`,
++      [this.name, statuses, Math.max(0, grace) / 1000, limit],
++    );
++    return rows.map((row) => row.id);
++  }
++
++  async getJobCounts(...types: string[]): Promise<Record<string, number>> {
++    const rows = await this.q<Record<string, number>>(
++      `SELECT
++         count(*) FILTER (WHERE status = 'active')                        AS active,
++         count(*) FILTER (WHERE status = 'completed')                     AS completed,
++         count(*) FILTER (WHERE status = 'failed')                        AS failed,
++         count(*) FILTER (WHERE status = 'waiting' AND run_at > now())     AS delayed,
++         count(*) FILTER (WHERE status = 'waiting' AND run_at <= now())    AS waiting,
++         count(*) FILTER (WHERE status = 'waiting')                       AS paused
++       FROM local_queue_job WHERE queue = $1`,
++      [this.name],
++    );
++    const row = rows[0] ?? {};
++    const counts: Record<string, number> = {
++      active: Number(row.active ?? 0),
++      completed: Number(row.completed ?? 0),
++      failed: Number(row.failed ?? 0),
++      delayed: Number(row.delayed ?? 0),
++      waiting: Number(row.waiting ?? 0),
++      paused: (await this.isPaused()) ? Number(row.paused ?? 0) : 0,
++    };
++    if (types.length === 0) {
++      return counts;
++    }
++    return Object.fromEntries(types.map((type) => [type, counts[type] ?? 0]));
++  }
++
++  async getJobs(types: string | string[], _start: number, _end: number): Promise<LocalJob[]> {
++    const wanted = new Set(Array.isArray(types) ? types : [types]);
++    const clauses: string[] = [];
++    if (wanted.has('waiting')) {
++      clauses.push(`(status = 'waiting' AND run_at <= now())`);
++    }
++    if (wanted.has('delayed')) {
++      clauses.push(`(status = 'waiting' AND run_at > now())`);
++    }
++    for (const status of ['active', 'completed', 'failed']) {
++      if (wanted.has(status)) {
++        clauses.push(`status = '${status}'`);
++      }
++    }
++    if (clauses.length === 0) {
++      return [];
++    }
++    const rows = await this.q<JobRow>(
++      `SELECT * FROM local_queue_job
++        WHERE queue = $1 AND (${clauses.join(' OR ')})
++        ORDER BY seq DESC
++        LIMIT 1000`,
++      [this.name],
++    );
++    return rows.map((row) => toLocalJob(this, row));
++  }
++
++  async getJob(id: string): Promise<LocalJob | undefined> {
++    const rows = await this.q<JobRow>(`SELECT * FROM local_queue_job WHERE queue = $1 AND id = $2`, [this.name, id]);
++    const row = rows[0];
++    return row ? toLocalJob(this, row) : undefined;
++  }
++
++  async removeJob(id: string): Promise<void> {
++    await this.q(`DELETE FROM local_queue_job WHERE queue = $1 AND id = $2`, [this.name, id]);
++  }
++
++  // `checkWorkers()` in JobRepository asks whether a microservices worker is
++  // connected. Here that is a live heartbeat, not a faked constant.
++  async getWorkers(): Promise<{ rawname: string }[]> {
++    const rows = await this.q<{ name: string }>(
++      `SELECT name FROM local_queue_worker
++        WHERE queue = $1 AND heartbeat_on > now() - make_interval(secs => $2)`,
++      [this.name, STALE_SECONDS],
++    );
++    return rows.map((row) => ({ rawname: row.name }));
++  }
++
++  async obliterate(): Promise<void> {
++    await this.q(`DELETE FROM local_queue_job WHERE queue = $1`, [this.name]);
++  }
++
++  // ── worker plumbing ────────────────────────────────────────────────
++
++  async startWorker(): Promise<void> {
++    await this.q(
++      `INSERT INTO local_queue_worker (queue, owner, name) VALUES ($1, $2, $3)
++       ON CONFLICT (queue, owner) DO UPDATE SET name = EXCLUDED.name, heartbeat_on = now()`,
++      [this.name, this.owner, `immich_bull:${this.name}:w:microservices`],
++    );
++  }
++
++  async heartbeat(): Promise<void> {
++    await this.q(
++      `WITH worker AS (
++         UPDATE local_queue_worker SET heartbeat_on = now()
++          WHERE queue = $1 AND owner = $2
++          RETURNING 1
++       )
++       UPDATE local_queue_job SET heartbeat_on = now()
++        WHERE queue = $1 AND owner = $2 AND status = 'active'`,
++      [this.name, this.owner],
++    );
++  }
++
++  // At-least-once: an active job whose worker is gone goes back to the queue.
++  async sweep(): Promise<number> {
++    const rows = await this.q<{ id: string }>(
++      `UPDATE local_queue_job AS job
++          SET status = 'waiting', owner = NULL, heartbeat_on = NULL, run_at = now()
++        WHERE job.queue = $1
++          AND job.status = 'active'
++          AND job.heartbeat_on < now() - make_interval(secs => $2)
++          AND NOT EXISTS (
++            SELECT 1 FROM local_queue_worker w
++             WHERE w.queue = job.queue AND w.owner = job.owner
++               AND w.heartbeat_on > now() - make_interval(secs => $2)
++          )
++        RETURNING job.id`,
++      [this.name, STALE_SECONDS],
++    );
++    if (rows.length > 0) {
++      this.notifyWorkers();
++    }
++    return rows.length;
++  }
++
++  async take(): Promise<LocalJob | undefined> {
++    const rows = await this.q<JobRow>(
++      `UPDATE local_queue_job AS job
++          SET status = 'active', owner = $2, heartbeat_on = now(), attempts = job.attempts + 1
++         FROM (
++           SELECT queue, id FROM local_queue_job
++            WHERE queue = $1
++              AND status = 'waiting'
++              AND run_at <= now()
++              AND NOT EXISTS (SELECT 1 FROM local_queue_state s WHERE s.queue = $1 AND s.paused)
++            ORDER BY priority ASC NULLS LAST, seq ASC
++            FOR UPDATE SKIP LOCKED
++            LIMIT 1
++         ) AS pick
++        WHERE job.queue = pick.queue AND job.id = pick.id
++        RETURNING job.*`,
++      [this.name, this.owner],
++    );
++    const row = rows[0];
++    return row ? toLocalJob(this, row) : undefined;
++  }
++
++  async settle(job: LocalJob, error?: unknown, value?: any): Promise<void> {
++    const maxAttempts = job.opts.attempts ?? 1;
++    const retry = error !== undefined && job.attemptsMade < maxAttempts;
++    const status: RowStatus = retry ? 'waiting' : error === undefined ? 'completed' : 'failed';
++    const reason = error === undefined ? null : error instanceof Error ? error.message : String(error);
++
++    const rows = await this.q<JobRow>(
++      `UPDATE local_queue_job
++          SET status = $3,
++              failed_reason = $4,
++              returnvalue = $5::jsonb,
++              finished_on = CASE WHEN $3 = 'waiting' THEN NULL ELSE now() END,
++              run_at = CASE WHEN $3 = 'waiting' THEN now() + make_interval(secs => $6::double precision) ELSE run_at END,
++              owner = NULL,
++              heartbeat_on = NULL
++        WHERE queue = $1 AND id = $2
++        RETURNING *`,
++      [this.name, job.id, status, reason, value === undefined ? null : value, retry ? backoffSeconds(job) : 0],
++    );
++
++    const row = rows[0];
++    if (row) {
++      Object.assign(job, toLocalJob(this, row));
++    }
++    if (retry) {
++      this.notifyWorkers();
++    }
++  }
++
++  // Graceful shutdown: hand back anything still running so the next boot
++  // re-runs it instead of waiting for the stall sweep.
++  async close(): Promise<void> {
++    await this.q(
++      `WITH released AS (
++         UPDATE local_queue_job SET status = 'waiting', owner = NULL, heartbeat_on = NULL, run_at = now()
++          WHERE queue = $1 AND owner = $2 AND status = 'active'
++          RETURNING id
++       ), dropped AS (
++         DELETE FROM local_queue_worker WHERE queue = $1 AND owner = $2 RETURNING 1
++       )
++       SELECT count(*)::int AS released FROM released`,
++      [this.name, this.owner],
++    );
++  }
++
++  onModuleDestroy() {
++    void this.close();
++  }
++}
++
++export class LocalWorker {
++  private concurrencyValue: number;
++  private running = 0;
++  private stopped = false;
++  private pumping = false;
++  private readonly unsubscribe: () => void;
++  private readonly timers: NodeJS.Timeout[] = [];
++
++  constructor(
++    private queue: LocalQueue,
++    private handler: JobHandler,
++    options: { concurrency?: number } = {},
++  ) {
++    this.concurrencyValue = options.concurrency ?? 1;
++    this.unsubscribe = queue.onWork(() => this.tick(() => this.pump()));
++
++    this.tick(() => queue.startWorker());
++    this.every(HEARTBEAT_MS, () => this.tick(() => queue.heartbeat()));
++    this.every(SWEEP_MS, () => this.tick(() => queue.sweep()));
++    this.every(POLL_MS, () => this.tick(() => this.pump()));
++  }
++
++  // A database blip must not become an unhandled rejection that kills the app;
++  // the next tick retries, and the heartbeat going stale lets other workers
++  // recover whatever this one was holding.
++  private tick(fn: () => Promise<unknown>) {
++    fn().catch(() => {});
++  }
++
++  // Unref'd so a forgotten worker never keeps the app alive.
++  private every(ms: number, fn: () => void) {
++    const timer = setInterval(fn, ms);
++    timer.unref();
++    this.timers.push(timer);
++  }
++
++  get concurrency() {
++    return this.concurrencyValue;
++  }
++
++  set concurrency(value: number) {
++    this.concurrencyValue = Math.max(1, value);
++    void this.pump();
++  }
++
++  private async pump() {
++    if (this.stopped || this.pumping) {
++      return;
++    }
++    this.pumping = true;
++    try {
++      while (!this.stopped && this.running < this.concurrencyValue) {
++        const job = await this.queue.take();
++        if (!job) {
++          return;
++        }
++        this.running++;
++        void this.run(job);
++      }
++    } catch {
++      // A transient database error must not kill the loop; the poll retries.
++    } finally {
++      this.pumping = false;
++    }
++  }
++
++  private async run(job: LocalJob) {
++    try {
++      const value = await this.handler(job);
++      await this.queue.settle(job, undefined, value);
++    } catch (error) {
++      try {
++        await this.queue.settle(job, error);
++      } catch {
++        // The row stays `active` with a stale heartbeat; the stall sweep re-runs it.
++      }
++    } finally {
++      this.running--;
++      this.tick(() => this.pump());
++    }
++  }
++
++  async close(): Promise<void> {
++    this.stopped = true;
++    this.unsubscribe();
++    for (const timer of this.timers) {
++      clearInterval(timer);
++    }
++    await this.queue.close();
++  }
++}
++
++const queues = new Map<string, LocalQueue>();
++
++const localQueue = (sql: Sql, name: string): LocalQueue => {
++  let queue = queues.get(name);
++  if (!queue) {
++    queue = new LocalQueue(sql, name);
++    queues.set(name, queue);
++  }
++  return queue;
++};
++
++@Module({})
++export class LocalQueueModule {
++  static forQueues(names: string[], database: DatabaseConnectionParams): DynamicModule {
++    const sql = createSql(database);
++
++    const providers = names.map((name) => ({
++      provide: getQueueToken(name),
++      useFactory: () => localQueue(sql, name),
++    }));
++
++    return {
++      global: true,
++      module: LocalQueueModule,
++      providers,
++      exports: providers.map((provider) => provider.provide),
++    };
++  }
++}

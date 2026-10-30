@@ -1,0 +1,15 @@
+# Platform: WINDOWS — this file is the reason a Mac build needs `RUSTUP_TOOLCHAIN=stable`.
+# Nothing else in a standard build reads it on macOS. The platform map is ../PLATFORMS.md.
+#
+# The default host toolchain on this machine is `windows-gnu`, whose linker
+# needs a MinGW `dlltool.exe` that is not installed. Tauri on Windows wants
+# MSVC, which is what `msvc` fixes. Committing it here means `cargo tauri build`
+# behaves the same for a fresh clone and in CI.
+#
+# This pin is Windows-only by construction: on macOS there is no such toolchain,
+# and cargo would fail before compiling anything. RUSTUP_TOOLCHAIN wins over this
+# file, so `scripts/build-mac.sh` exports `RUSTUP_TOOLCHAIN=stable` (which on a Mac
+# is the host toolchain). Any manual build on a Mac needs the same variable — or
+# `rustup override set stable`, which is the persistent form.
+[toolchain]
+channel = "stable-x86_64-pc-windows-msvc"

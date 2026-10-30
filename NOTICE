@@ -1,0 +1,88 @@
+immich-desktop
+Copyright (C) 2026 the immich-desktop contributors
+
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU Affero General Public License as published by the Free
+Software Foundation, version 3. The full text is in LICENSE, unmodified.
+
+There is no warranty, to the extent permitted by law.
+
+    immich-desktop is a Tauri shell that runs a local Immich server.
+    Copyright (C) 2026 the immich-desktop contributors
+
+---
+
+## Why this program is AGPL-3.0
+
+This is not a preference that can be relaxed by editing a field. Two pieces of
+this repository are modifications of Immich, and Immich is AGPL-3.0:
+
+1. **`immich/v3.3.5-desktop.patch`** edits 11 files of the Immich server
+   (`server/src/…`): it replaces the Redis/BullMQ queue with a Postgres-backed
+   one, drops the Redis socket.io adapter, decodes HEIC through FFmpeg when
+   sharp cannot, tolerates missing geodata, and fixes two POSIX-only path
+   assumptions that break on Windows. A patch that modifies AGPL source is
+   itself AGPL-licensed.
+2. **The `immich-plugin-core` plugin** that a build ships in
+   `runtime/plugins/immich-plugin-core` is compiled from Immich's own
+   `packages/plugin-core` — see the `fetchCorePlugin` step in
+   `scripts/prepare-runtime-macos.mjs` and `scripts/build-core-plugin-windows.mjs`.
+   It is a build product of AGPL source, not a separate program.
+
+A built app additionally contains the Immich server compiled from the patched
+source, Immich's web UI in `runtime/www`, and the plugin above. Immich is
+Copyright (c) the Immich contributors, licensed AGPL-3.0 (see
+<https://github.com/immich-app/immich>).
+
+The shell around it — the Rust supervisor in `src-tauri/src`, the React
+interface in `src`, the CLIP service in `ml` — is original work and could in
+principle be licensed separately, since it talks to the server over loopback
+HTTP rather than linking to it. It is licensed AGPL-3.0 here anyway, because the
+two are conveyed as one installer and a single licence removes any argument
+about what the combined work is. If that ever needs to change, the split has to
+be made deliberately for the original code only: the patch and the plugin stay
+AGPL-3.0 whatever happens.
+
+## Changes to Immich
+
+Immich v3.3.5 is modified. Every changed file and every hunk is visible in
+`immich/v3.3.5-desktop.patch`; `immich/README.md` lists the files and the
+reasons. The upstream revision they apply to is pinned in `scripts/immich-ref.mjs`,
+which every assembler reads so a build and its source archive cannot disagree.
+
+## Corresponding source
+
+Immich's AGPL requires that anyone who receives a built app can also get the
+source that produced it. To reconstruct it:
+
+```sh
+git clone --depth 1 --branch v3.3.5 https://github.com/immich-app/immich.git
+cd immich && git apply /path/to/immich/v3.3.5-desktop.patch
+```
+
+then build with `scripts/prepare-runtime-macos.mjs` (macOS) — parking that the
+Windows runtime assembler does not exist yet, as `SHARE.md` explains.
+
+`scripts/package-core-source.mjs` does that for you. It writes
+`release/immich-<ref>-desktop-source-<date>.tar.gz`, the whole patched tree with
+`.git` and `node_modules` dropped, and a `.sha256` beside it. Attach both to the
+release. A patch against a public tag plus a build script is convenient, but it
+is not by itself the "Corresponding Source" that AGPL §6 asks you to provide.
+
+## Third-party components in a build
+
+The installer conveys third-party binaries under their own licences, some of
+which are copyleft. The full inventory, with the obligations each one creates,
+is in [docs/licensing.md](docs/licensing.md). In short:
+
+| Component | Licence |
+| --- | --- |
+| Immich server + web UI + core plugin | AGPL-3.0 |
+| FFmpeg / ffprobe | **GPL-3.0** (Windows: gyan.dev build; macOS: `ffmpeg-static`) |
+| PostgreSQL 17 with pgvector | PostgreSQL Licence |
+| Node.js 24 | MIT |
+| CLIP model `Xenova/clip-vit-base-patch32` | MIT |
+
+The FFmpeg builds are GPL, which `PLAN.md` originally intended to avoid. They
+run as separate processes, so they do not change the licence of this program,
+but a build has to carry FFmpeg's licence and a way to get FFmpeg's source.

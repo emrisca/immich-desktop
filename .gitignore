@@ -1,0 +1,38 @@
+node_modules
+dist
+spike/node_modules
+spike/.work
+src-tauri/target
+# Windows also keeps an explicitly named MSVC tree beside it on this machine.
+src-tauri/target-*
+src-tauri/gen
+*.local
+.run-test
+
+# Generated, per platform, and several GB together. `runtime/` holds this
+# machine's binaries only: node, Postgres with pgvector, ffmpeg, the patched
+# Immich server, its web UI, the CLIP service and the Immich plugin. On macOS it
+# is produced by `scripts/prepare-runtime-macos.mjs`; on Windows it was assembled
+# by hand. Never copy one platform's `runtime/` to the other.
+runtime
+ml/models
+
+# macOS assembler: the patched Immich checkout and the downloads it caches
+# (Node, Postgres.app, extism-js, wasm-merge). Both are re-creatable.
+.mac-build
+.mac-cache
+
+# The Windows plugin build's toolchains: extism-js and binaryen (~120 MB), checked
+# against their published checksums on first use.
+.win-cache
+
+# Corresponding-source packaging: the upstream clone, the tree it stages, and the
+# archive it writes. All three are outputs of `scripts/package-core-source.mjs`.
+.source-cache
+release
+
+# Notes written for one machine and one reader. They stay on the machine that ran
+# the build and are never published.
+HANDOFF.md
+SHARE.md
+docs/handoffs
