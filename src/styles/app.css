@@ -102,7 +102,7 @@ body {
   width: 17px;
   height: 17px;
   border-radius: 6px;
-  background: linear-gradient(140deg, var(--accent), var(--mint));
+  background: var(--logo-mark);
   box-shadow: 0 0 16px rgba(167, 139, 250, 0.6), inset 0 0 0 1px rgba(255, 255, 255, 0.4);
 }
 

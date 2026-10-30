@@ -56,6 +56,9 @@
   --mint: #2ee6c5;
   --flag: #ff8f9c;
 
+  /* the logo mark, sampled from the app icon so the titlebar dot agrees with it */
+  --logo-mark: linear-gradient(140deg, #b6aaf8, #93a8f0 34%, #62bcdf 62%, #3ad8cd);
+
   /* named glows — the only four in the app */
   --glow-accent: 0 0 22px rgba(167, 139, 250, 0.42);
   --glow-accent-tight: 0 0 12px rgba(167, 139, 250, 0.6);
