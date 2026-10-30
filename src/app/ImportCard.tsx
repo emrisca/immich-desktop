@@ -80,7 +80,7 @@ export function ImportCard({ status, live, running }: Props) {
   const finished = progress && !progress.running && progress.done > 0;
 
   return (
-    <Panel index={3}>
+    <Panel>
       <div className="section-head">
         <p className="eyebrow">Import</p>
         <span className="section-head__note">

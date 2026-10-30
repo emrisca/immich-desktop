@@ -1,0 +1,303 @@
+/* Overview: the vitals row, services, the phone card, the library meter and the import drop zone. */
+
+/* ══ vitals ═══════════════════════════════════════════════════ */
+
+/* Three measured facts under the hero, as index rows: label left, value right.
+   Rows rather than columns because a 380px card cannot hold a 13-character
+   address in a third of its width without clipping it. */
+.vitals {
+  display: flex;
+  flex-direction: column;
+  margin: 22px 0 0;
+  padding-top: 6px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.vital {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+  min-width: 0;
+  padding: 7px 0;
+}
+
+.vital + .vital {
+  border-top: 1px solid var(--line-soft);
+}
+
+/* `dd` carries a 40px start margin in the UA sheet; inside a 1fr cell that is
+   what clipped the address and the folder name. */
+.vital dt,
+.vital dd {
+  margin: 0;
+}
+
+.vital__label {
+  display: block;
+  font-family: var(--font-label);
+  font-size: 9.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.vital__value {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ══ services ═════════════════════════════════════════════════ */
+
+/* Three cards rather than three rows: the state dot is the only saturated
+   mark, so a stopped service reads at a glance. */
+.services {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(188px, 1fr));
+  gap: 8px;
+}
+
+.service {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr);
+  grid-template-areas:
+    "dot name"
+    "dot detail";
+  gap: 1px 11px;
+  padding: 13px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--fill-2);
+  box-shadow: inset 0 0 0 1px var(--line-soft);
+  transition: background-color 160ms ease, box-shadow 160ms ease;
+}
+
+.service:hover {
+  background: var(--fill-4);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
+.service__dot {
+  grid-area: dot;
+  align-self: start;
+  width: 8px;
+  height: 8px;
+  margin-top: 5px;
+  border-radius: 999px;
+  background: var(--ink-3);
+  transition: background-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+}
+
+.service__dot--running {
+  background: var(--mint);
+}
+
+.service__dot--starting {
+  background: var(--accent);
+  animation: breathe 1.6s ease-in-out infinite;
+}
+
+.service__dot--offline {
+  background: var(--flag);
+}
+
+.service__dot--absent {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--ink-3);
+}
+
+@keyframes breathe {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.service__name {
+  grid-area: name;
+  font-size: 12.5px;
+  color: var(--ink);
+}
+
+.service__detail {
+  grid-area: detail;
+  font-size: 11px;
+  color: var(--ink-3);
+}
+
+.service__port {
+  grid-column: 2;
+  margin-top: 6px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--ink-2);
+}
+
+/* ══ the phone card ═══════════════════════════════════════════ */
+
+.phone {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+}
+
+.phone__address {
+  margin: 9px 0 0;
+  font-family: var(--font-mono);
+  /* Sized to the narrowest this card gets (the 306px column) so a whole
+     `http://a.b.c.d:port` stays on one line; 2.2vw outgrew it and split the port.
+     `break-word`, not `anywhere`, so a runaway address breaks at the scheme
+     `<wbr>` first and only mangles itself if even that will not fit. */
+  font-size: clamp(14px, 1.9vw, 16px);
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  overflow-wrap: break-word;
+}
+
+.phone__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+/* A white plate the camera can read, whatever the window is doing. */
+.phone__qr {
+  position: relative;
+  justify-self: start;
+  width: 132px;
+  height: 132px;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: #ffffff;
+  box-shadow:
+    0 0 0 1px var(--line-soft),
+    var(--qr-shadow);
+}
+
+.phone__qr svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.phone__qr--empty {
+  display: grid;
+  place-items: center;
+  background: var(--well);
+  box-shadow: inset 0 0 0 1px var(--line-soft);
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  line-height: 1.5;
+  color: var(--ink-3);
+  text-align: center;
+}
+
+.phone__steps {
+  margin: 15px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  font-size: 11.5px;
+  color: var(--ink-2);
+}
+
+.phone__steps li {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 0;
+  border-top: 1px solid var(--line-soft);
+}
+
+.phone__steps strong {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  flex: none;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+}
+
+/* ══ library meter ════════════════════════════════════════════ */
+
+.meter {
+  margin-top: 14px;
+}
+
+.meter__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 7px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--ink-3);
+}
+
+.meter__track {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--fill-7);
+  box-shadow: inset 0 0 0 1px var(--line-soft);
+  overflow: hidden;
+}
+
+.meter__fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--meter-fill);
+  transition: width var(--dur) var(--ease);
+}
+
+/* ══ drop zone ════════════════════════════════════════════════ */
+
+.dropzone {
+  padding: 22px 18px;
+  border-radius: var(--radius-sm);
+  text-align: center;
+  background: var(--well);
+  box-shadow: inset 0 0 0 1px var(--line-soft);
+  transition: box-shadow var(--dur) var(--ease), background var(--dur) var(--ease);
+}
+
+.dropzone--over {
+  background: var(--dropzone-over-bg);
+  box-shadow: var(--dropzone-over-edge);
+}
+
+/* Importing: the well stays put and only its edge brightens, so the panel does
+   not resize as the count climbs. */
+.dropzone--busy {
+  background: var(--dropzone-busy-bg);
+  box-shadow: var(--dropzone-busy-edge);
+}
+
+.dropzone__title {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.dropzone__note {
+  margin: 6px 0 0;
+  font-size: 11.5px;
+  color: var(--ink-2);
+  overflow-wrap: anywhere;
+}

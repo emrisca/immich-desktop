@@ -93,7 +93,7 @@ export function Storage({ folder, live, onChooseFolder }: Props) {
         </p>
       </header>
 
-      <Panel index={1}>
+      <Panel>
         <Field
           label="Photo folder"
           mono
@@ -118,7 +118,7 @@ export function Storage({ folder, live, onChooseFolder }: Props) {
         ) : null}
       </Panel>
 
-      <Panel index={2}>
+      <Panel>
         <div className="section-head">
           <p className="eyebrow">This library</p>
           <span className="section-head__note">
@@ -179,7 +179,7 @@ export function Storage({ folder, live, onChooseFolder }: Props) {
         </div>
       </Panel>
 
-      <Panel index={3}>
+      <Panel>
         <p className="eyebrow">Checks before setup</p>
         <div className="empty" style={{ marginTop: 12 }}>
           <span className="empty__title">Folder checks run before the switch</span>

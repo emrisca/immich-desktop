@@ -4,8 +4,11 @@ import { FirstRun } from "@/app/FirstRun";
 import { openLibrary } from "@/app/runtime";
 import { Logs } from "@/app/Logs";
 import { Overview } from "@/app/Overview";
+import { isMac } from "@/app/platform";
+import { Settings } from "@/app/Settings";
 import { Sidebar } from "@/app/Sidebar";
 import { Storage } from "@/app/Storage";
+import { useStyle } from "@/app/style";
 import { TitleBar } from "@/app/TitleBar";
 import { useRuntime } from "@/app/useRuntime";
 import { useSetup } from "@/app/setup";
@@ -54,6 +57,10 @@ function TopBar({
 export function App() {
   const [view, setView] = useState<ViewId>("overview");
   const runtime = useRuntime();
+  // settings.json is the authority; the hook adopts it and caches it for the
+  // next launch. In a browser preview there is no shell, so the cached value
+  // is all there is.
+  const { style, setStyle, error: styleError } = useStyle(runtime.status?.uiStyle ?? null);
   const serverRunning =
     runtime.status?.services.find((service) => service.id === "server")?.state === "running";
   const { setup, markCreated } = useSetup(
@@ -83,7 +90,6 @@ export function App() {
 
   return (
     <>
-      <div className="aurora" aria-hidden="true" />
       <div className="window">
         <TitleBar />
         <div className="shell">
@@ -118,6 +124,11 @@ export function App() {
             ) : null}
             {view === "backups" ? <Backups /> : null}
             {view === "logs" ? <Logs /> : null}
+            {/* The appearance picker is the Mac look's own control: the Windows
+                build loads one stylesheet and has nothing to switch. */}
+            {isMac && view === "settings" ? (
+              <Settings style={style} onSelect={setStyle} error={styleError} />
+            ) : null}
           </main>
         </div>
       </div>

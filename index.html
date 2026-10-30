@@ -1,9 +1,23 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-style="dark">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Immich Desktop</title>
+    <script>
+      // The style must be on <html> before the first paint, or the app shows
+      // one look and re-skins into another. settings.json is the authority;
+      // this is the cached copy the shell wrote when the choice last changed.
+      // The static attribute above stays as the default when there is none.
+      try {
+        const saved = localStorage.getItem("uiStyle");
+        if (saved === "light" || saved === "dark") {
+          document.documentElement.dataset.style = saved;
+        }
+      } catch {
+        // A disabled store leaves the static default in place.
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>

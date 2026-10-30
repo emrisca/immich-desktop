@@ -99,7 +99,7 @@ export function Logs() {
         <h1 className="display display--sm">Server and database output</h1>
       </header>
 
-      <Panel index={1}>
+      <Panel>
         <Tabs options={options} value={tab} onChange={setTab} label="Log source" />
 
         {view && view.lines.length > 0 ? (

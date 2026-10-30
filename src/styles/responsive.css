@@ -1,0 +1,121 @@
+/* Breakpoints and the reduced-motion override, last so they can win. */
+
+/* ══ responsive: 900 and 640 px ═══════════════════════════════ */
+
+@media (max-width: 1000px) {
+  .hero {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .phone {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+}
+
+@media (max-width: 860px) {
+  .shell {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  /* A sidebar that is a bar along the top cannot bleed under the titlebar or
+     keep a rule on its right; its rule moves to its foot. */
+  .sidebar {
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+    margin-top: 0;
+    padding: 8px;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+    overflow-x: auto;
+  }
+
+  .sidebar__heading,
+  .footlink__meta {
+    display: none;
+  }
+
+  /* The foot stays: it is the only way into Settings, so a narrow window
+     must not lose it. */
+  .sidebar__foot {
+    flex-direction: row;
+    align-items: center;
+    padding: 0;
+    border-top: 0;
+  }
+
+  .sidebar__nav {
+    flex-direction: row;
+    gap: 2px;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
+  .navitem {
+    width: auto;
+    padding: 7px 12px;
+    white-space: nowrap;
+  }
+
+  .navitem__dot,
+  .navitem__count {
+    display: none;
+  }
+
+  .split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .page {
+    padding: 14px 16px 26px;
+  }
+
+  .panel--hero {
+    padding: 4px 0 8px;
+  }
+}
+
+@media (max-width: 680px) {
+  .phone {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .phone__qr {
+    display: none;
+  }
+
+  .kv {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px 0;
+  }
+
+  .kv dd {
+    margin-bottom: 8px;
+  }
+
+  .topbar__address {
+    display: none;
+  }
+}
+
+/* ══ reduced motion ═══════════════════════════════════════════ */
+
+/* Travel collapses to a cut; every state is still announced. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  .btn--primary:hover::after {
+    animation: none;
+  }
+
+  .panel {
+    animation: none;
+  }
+}

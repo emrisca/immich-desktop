@@ -43,7 +43,7 @@ export const library = {
   videos: 96,
   used: "12.4 GB",
   free: "465 GB",
-  /** Percent of the volume in use by this library, for the glow meter. */
+  /** Percent of the volume in use by this library, for the meter. */
   share: 3,
 };
 

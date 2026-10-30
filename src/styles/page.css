@@ -1,0 +1,46 @@
+/* The page frame every view sits in: width, inset, section rhythm and the one- and two-column layouts. */
+
+/* ══ page ═════════════════════════════════════════════════════ */
+
+.page {
+  width: 100%;
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 16px 20px 30px;
+  display: flex;
+  flex-direction: column;
+}
+
+/* A section is a row of a grouped list: the hairline is what separates it from
+   the next, as AppKit does on the window surface. */
+.page > * + *,
+.hero > * + *,
+.split > * + * {
+  border-top: 1px solid var(--line);
+}
+
+.hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+}
+
+.hero__intro {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.hero__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 9px;
+  margin-top: 20px;
+}
+
+.split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+}

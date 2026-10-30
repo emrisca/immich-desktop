@@ -42,6 +42,10 @@ ml/models
 .source-cache
 release
 
+# Scratch used while checking a look: dev-server log, before/after screenshots and
+# the throwaway contrast script. Re-created whenever it is needed.
+.style-work
+
 # Notes written for one machine and one reader. They stay on the machine that ran
 # the build and are never published.
 HANDOFF.md

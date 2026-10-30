@@ -1,0 +1,51 @@
+/* Logs: the viewer, its head and its line rendering. */
+
+/* ══ logs ═════════════════════════════════════════════════════ */
+
+/* The pane scrolls itself rather than growing the page: a service that has been
+   running for a week is a hundred thousand lines, and the window is a fixed
+   height. Source headers stick to the top so the boundary between the two files
+   stays visible while scrolling through them. */
+.logs {
+  margin-top: 14px;
+  max-height: min(52vh, 520px);
+  overflow: auto;
+  padding-bottom: 8px;
+  border-radius: var(--radius-sm);
+  background: var(--well);
+  box-shadow: inset 0 0 0 1px var(--line-soft);
+}
+
+.logs__source {
+  position: sticky;
+  top: 0;
+  margin: 0;
+  padding: 7px 14px 6px;
+  background: var(--logs-head-bg);
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.logs__line {
+  margin: 0;
+  padding: 0 14px;
+  color: var(--ink-2);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.logs__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 12px;
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+}

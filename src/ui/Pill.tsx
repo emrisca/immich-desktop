@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 export type Tone = "idle" | "live" | "busy" | "warn";
 
 /**
- * The one status mark in the window: a glowing dot, a short label and an
+ * The one status mark in the window: a coloured dot, a short label and an
  * optional monospace value. Colour is never the only signal — the label says
  * what the dot means.
  */

@@ -1,0 +1,357 @@
+/* The window's own frame: titlebar and window buttons, the shell grid, sidebar, context bar and status pill. */
+
+/* ══ window chrome ════════════════════════════════════════════ */
+
+.window {
+  position: relative;
+  display: grid;
+  /* The titlebar row is a fixed height because the sidebar climbs under it. */
+  grid-template-rows: var(--bar-h) minmax(0, 1fr);
+  height: 100%;
+}
+
+/* Above the shell: the sidebar bleeds under the titlebar and paints it behind
+   these controls, so the controls must stay on top of it. */
+.titlebar {
+  position: relative;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 8px 0 15px;
+  user-select: none;
+}
+
+.titlebar__mark {
+  width: 17px;
+  height: 17px;
+  border-radius: 6px;
+  background: var(--logo-mark);
+  box-shadow: var(--mark-shadow);
+}
+
+.titlebar__name {
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+
+.titlebar__drag {
+  flex: 1;
+  height: 100%;
+}
+
+.titlebar__controls {
+  display: flex;
+  gap: 2px;
+}
+
+.winbtn {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 28px;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: none;
+  color: var(--ink-3);
+  cursor: pointer;
+  transition: background-color 160ms ease, color 160ms ease;
+}
+
+.winbtn:hover {
+  background: var(--fill-7);
+  color: var(--ink);
+}
+
+.winbtn--close:hover {
+  background: var(--winbtn-close-bg);
+  color: var(--winbtn-close-ink);
+}
+
+.winbtn svg {
+  width: 10px;
+  height: 10px;
+}
+
+/* macOS: the same three controls, moved left and drawn as circles. The glyphs
+   are for the Windows squares; a Mac shows colour alone. */
+.titlebar[data-mac="true"] {
+  padding-left: 14px;
+  gap: 12px;
+}
+
+.titlebar__controls--mac {
+  gap: 8px;
+}
+
+.winbtn--mac {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  box-shadow: var(--winbtn-mac-edge);
+  transition: filter 160ms ease, opacity 160ms ease;
+}
+
+.winbtn--mac:hover {
+  filter: brightness(1.12);
+}
+
+.winbtn--mac svg {
+  display: none;
+}
+
+.winbtn--mac-close {
+  background: #ff5f57;
+}
+
+.winbtn--mac-minimise {
+  background: #febc2e;
+}
+
+.winbtn--mac-zoom {
+  background: #28c840;
+}
+
+.titlebar__controls--mac .winbtn:disabled {
+  opacity: 0.45;
+}
+
+/* ══ status pill ══════════════════════════════════════════════ */
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 3px 10px 3px 8px;
+  border-radius: 999px;
+  background: var(--fill-5);
+  box-shadow: inset 0 0 0 1px var(--line-soft);
+  font-family: var(--font-label);
+  font-size: 10.5px;
+  letter-spacing: 0.02em;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+
+.pill__dot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 999px;
+  background: var(--ink-3);
+  transition: background-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+}
+
+.pill--live .pill__dot {
+  background: var(--mint);
+}
+
+.pill--busy .pill__dot {
+  background: var(--accent);
+  animation: breathe 1.6s ease-in-out infinite;
+}
+
+.pill--warn .pill__dot {
+  background: var(--flag);
+}
+
+.pill__port {
+  color: var(--ink);
+}
+
+/* ══ shell ════════════════════════════════════════════════════ */
+
+.shell {
+  display: grid;
+  grid-template-columns: 222px minmax(0, 1fr);
+  min-height: 0;
+}
+
+/* Two classes: the dock keeps its own padding and surface even though `.panel`
+   comes later. It is an edge of the window: flush to the left, full height,
+   and climbing under the titlebar so the traffic lights sit on its vibrancy. */
+.panel.sidebar {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: calc(-1 * var(--bar-h));
+  padding: calc(12px + var(--bar-h)) 10px 10px;
+  border-right: 1px solid var(--line);
+  background: var(--sidebar-bg);
+  overflow: hidden;
+}
+
+.sidebar__heading {
+  padding: 0 7px;
+  font-family: var(--font-label);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.sidebar__nav {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  gap: 3px;
+  overflow-y: auto;
+}
+
+.sidebar__foot {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 5px;
+  padding: 8px 4px 0;
+  border-top: 1px solid var(--line-soft);
+}
+
+/* Settings belongs to the window, not to the library, so it sits below the
+   sections rather than among them. */
+.footlink {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--ink-2);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 160ms ease, color 160ms ease, box-shadow var(--dur) var(--ease);
+}
+
+.footlink svg {
+  width: 13px;
+  height: 13px;
+  flex: none;
+}
+
+.footlink:hover {
+  background: var(--fill-6);
+  color: var(--ink);
+}
+
+.footlink[aria-current="page"] {
+  background: var(--nav-bg);
+  box-shadow: var(--nav-edge);
+  color: var(--ink);
+}
+
+.footlink__meta {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0;
+  padding: 0 8px 2px;
+  font-family: var(--font-label);
+  font-size: 10px;
+  color: var(--ink-3);
+}
+
+.navitem {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: var(--pad-row);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--ink-2);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 160ms ease, color 160ms ease, box-shadow var(--dur) var(--ease);
+}
+
+.navitem:hover {
+  background: var(--fill-3);
+  color: var(--ink);
+}
+
+.navitem[aria-current="page"] {
+  background: var(--nav-bg);
+  box-shadow: var(--nav-edge);
+  color: var(--ink);
+  font-weight: 550;
+}
+
+.navitem__dot {
+  width: 5px;
+  height: 5px;
+  flex: none;
+  border-radius: 999px;
+  background: var(--accent);
+  opacity: 0;
+  transition: opacity var(--dur) var(--ease);
+}
+
+.navitem[aria-current="page"] .navitem__dot {
+  opacity: 1;
+}
+
+.navitem__count {
+  margin-left: auto;
+  font-family: var(--font-label);
+  font-size: 10px;
+  color: var(--ink-3);
+}
+
+/* ══ main + sticky context bar ════════════════════════════════ */
+
+.main {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* The bar stays when the hero scrolls under it: the same blur, one line,
+   so the window never loses the name of where you are. */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 46px;
+  padding: 0 18px;
+  border-bottom: 1px solid var(--line-soft);
+  background: var(--topbar-bg);
+  -webkit-backdrop-filter: var(--panel-blur);
+  backdrop-filter: var(--panel-blur);
+}
+
+.topbar__title {
+  margin: 0;
+  font-size: 12.5px;
+  font-weight: 550;
+  letter-spacing: -0.005em;
+  color: var(--ink);
+}
+
+.topbar__meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.topbar__address {
+  font-family: var(--font-label);
+  font-size: 10.5px;
+  color: var(--ink-2);
+}

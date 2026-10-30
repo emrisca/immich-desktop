@@ -1,0 +1,217 @@
+/* ─────────────────────────────────────────────────────────────
+   The system look — Light and Dark.
+
+   macOS as AppKit actually draws it on 14/15 at the sizes this hub
+   renders, then measured. One ladder, walked from either end: `light`
+   and `dark`, with `dark` as the default a fresh install opens on.
+
+   Everything below is copied from the platform, not invented:
+
+     window         NSWindow.backgroundColor      #ECECEC / #1E1E1E
+     sidebar        NSVisualEffectView .sidebar   a translucent wash over
+                                                  the window
+     content card   controlBackgroundColor        #FFFFFF / #2C2C2E
+     separator      separatorColor                rgba(60,60,67,.29)
+                                                  / rgba(84,84,88,.65)
+     label          labelColor                    #1D1D1F / #F2F2F7
+     secondary      secondaryLabelColor           rgba(60,60,67,.90)
+     tertiary       tertiaryLabelColor            darkened: Apple's .26 and
+                                                  .52 read at 2.7 and 3.5:1,
+                                                  and this tier carries 10px
+                                                  labels, so it is set to .78
+     accent         controlAccentColor            systemBlue, darkened to
+                                                  #0066CC light (see below)
+     flag           systemRed (accessible)        #D70015 / #FF6961
+     healthy        systemGreen (accessible)      #248A3D / #30D158
+
+   Controls are the desktop size, not the iOS size: a push button is 28px
+   tall (22 small), a text field 30, a sidebar row 28, a segmented control
+   24, and the corners are 6px on a control and 10 on a card. Those come
+   from the padding rungs below, so the heights are a property of the look
+   rather than a number buried in a component.
+
+   Accent, measured: `systemBlue` #007AFF is 3.15:1 in both directions —
+   white on it, and it on white — which is below the floor for the 9.5px
+   "IN USE" label the appearance card sets in the accent. The light walk
+   therefore uses Apple's link blue #0066CC (5.6:1 with white, 4.7:1 on the
+   window).
+   Dark keeps #409CFF for text, dots and edges (5.9:1 on the card) and
+   darkens the button face to #0A63C9 so its white label clears 4.5 —
+   the two directions cannot both hold on one blue, so the fill and the
+   ink are separate rungs here, exactly as they are in AppKit.
+   ───────────────────────────────────────────────────────────── */
+
+/* ── the light walk ─────────────────────────────────────────── */
+
+[data-style="light"] {
+  color-scheme: light;
+
+  --rung-0: #ececec; /* page: window background */
+  --rung-1: #f4f4f6; /* sunk: a field or a log pane on a white card */
+  --rung-2: rgba(60, 60, 67, 0.29); /* hairline: separatorColor */
+  --rung-3: rgba(60, 60, 67, 0.6); /* boundary: 3.1:1 on the page, 3.45 on a card */
+  --rung-4: rgba(60, 60, 67, 0.78); /* ink faint: 4.90:1 on white */
+  --rung-5: rgba(60, 60, 67, 0.9); /* ink mid: 7.9:1 */
+  --rung-6: #1d1d1f; /* ink: labelColor, 17:1 */
+  --rung-7: #0066cc; /* accent: 5.6:1 with white, 4.5:1 on the page */
+  --rung-8: #ffffff; /* on accent */
+  --rung-9: #d70015; /* flag: systemRed accessible, 5.4:1 on white */
+
+  /* the few values a walk cannot mix from the rungs */
+  --btn-face-value: #0066cc;
+  --btn-shadow-value: 0 1px 0 rgba(0, 0, 0, 0.06), inset 0 0 0 1px rgba(0, 0, 0, 0.08);
+  --btn-shadow-hover-value: 0 1px 0 rgba(0, 0, 0, 0.08), inset 0 0 0 1px rgba(0, 0, 0, 0.14);
+  --thumb-edge-value: 0 0 0 1px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.14);
+  --qr-shadow-value: 0 2px 10px rgba(0, 0, 0, 0.14);
+  --sidebar-bg: rgba(246, 246, 246, 0.72);
+  --bar-value: #f6f6f6;
+  --topbar-value: rgba(246, 246, 246, 0.82);
+  --winbtn-close-bg-value: rgba(255, 59, 48, 0.14);
+  --winbtn-close-ink-value: #c22b21;
+  --mint-value: #248a3d; /* systemGreen accessible */
+}
+
+/* ── the dark walk ──────────────────────────────────────────── */
+
+[data-style="dark"] {
+  color-scheme: dark;
+
+  --rung-0: #1e1e1e; /* page: window background, dark */
+  --rung-1: #171719; /* sunk: below the card, not above it */
+  --rung-2: rgba(84, 84, 88, 0.65); /* hairline */
+  --rung-3: rgba(235, 235, 245, 0.42); /* boundary: measured on both surfaces */
+  --rung-4: rgba(235, 235, 245, 0.62); /* ink faint: 5.6:1 on the card */
+  --rung-5: rgba(235, 235, 245, 0.78); /* ink mid */
+  --rung-6: #f2f2f7; /* ink: labelColor dark */
+  --rung-7: #409cff; /* accent for text, dots and edges: 5.9:1 on the card */
+  --rung-8: #ffffff;
+  --rung-9: #ff6961; /* systemRed accessible dark */
+
+  --btn-face-value: #0a63c9; /* darker than the accent so its white label passes */
+  --btn-shadow-value: 0 1px 0 rgba(0, 0, 0, 0.3), inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  --btn-shadow-hover-value: 0 1px 0 rgba(0, 0, 0, 0.4), inset 0 0 0 1px rgba(255, 255, 255, 0.16);
+  --thumb-edge-value: 0 0 0 1px rgba(0, 0, 0, 0.35), 0 1px 3px rgba(0, 0, 0, 0.4);
+  --qr-shadow-value: 0 4px 14px rgba(0, 0, 0, 0.5);
+  --sidebar-bg: rgba(44, 44, 46, 0.72);
+  --bar-value: #2c2c2e;
+  --topbar-value: rgba(38, 38, 40, 0.82);
+  --winbtn-close-bg-value: rgba(255, 69, 58, 0.18);
+  --winbtn-close-ink-value: #ffd9d6;
+  --mint-value: #30d158; /* systemGreen accessible dark */
+}
+
+/* ── the contract, written once ─────────────────────────────────
+   Both walks answer to these. A token is a rung, a mix of two rungs, or
+   a `*-value` slot a walk fills above. Nothing here is a colour in its
+   own right — that is what lets the two walks share it. */
+
+[data-style="light"],
+[data-style="dark"] {
+  /* Type: the platform's own families. On a Mac these resolve to San
+     Francisco; the fallbacks are the same faces under their older names. */
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", system-ui,
+    sans-serif;
+  --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
+
+  --bg: var(--rung-0);
+
+  --well: var(--rung-1);
+  /* The toolbar is the one surface content scrolls under, so it keeps the
+     vibrance: a blurred wash of whatever is passing beneath it. */
+  --panel-blur: blur(28px) saturate(180%);
+  --topbar-bg: var(--topbar-value);
+  --logs-head-bg: var(--bar-value);
+
+  --line: var(--rung-2);
+  --line-soft: color-mix(in srgb, var(--rung-2) 62%, transparent);
+  --line-strong: color-mix(in srgb, var(--rung-3) 78%, transparent);
+  --line-control: var(--rung-3);
+  --line-field: var(--rung-3);
+
+  /* Apple's fill ladder is ink at low alpha, so one ladder serves both
+     walks: black on paper, white on the dark card. */
+  --fill-1: color-mix(in srgb, var(--rung-6) 2%, transparent);
+  --fill-2: color-mix(in srgb, var(--rung-6) 3.5%, transparent);
+  --fill-3: color-mix(in srgb, var(--rung-6) 5%, transparent);
+  --fill-4: color-mix(in srgb, var(--rung-6) 6%, transparent);
+  --fill-5: color-mix(in srgb, var(--rung-6) 7%, transparent);
+  --fill-6: color-mix(in srgb, var(--rung-6) 8%, transparent);
+  --fill-7: color-mix(in srgb, var(--rung-6) 10%, transparent);
+  --fill-8: color-mix(in srgb, var(--rung-6) 13%, transparent);
+  --fill-9: color-mix(in srgb, var(--rung-6) 17%, transparent);
+  --selection: color-mix(in srgb, var(--rung-7) 30%, transparent);
+  --scroll-thumb: color-mix(in srgb, var(--rung-6) 22%, transparent);
+  --scroll-thumb-hover: color-mix(in srgb, var(--rung-6) 34%, transparent);
+
+  --ink: var(--rung-6);
+  --ink-2: var(--rung-5);
+  --ink-3: var(--rung-4);
+
+  --accent: var(--rung-7);
+  --accent-soft: color-mix(in srgb, var(--rung-7) 12%, transparent);
+  /* The two walks usually agree here, and the slot lets the dark one keep
+     its white label while its fill is the darker blue. */
+  --on-accent: var(--rung-8);
+  --mint: var(--mint-value);
+  --flag: var(--rung-9);
+
+  --logo-mark: linear-gradient(140deg, #b6aaf8, #93a8f0 34%, #62bcdf 62%, #3ad8cd);
+  --mark-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12);
+
+  --winbtn-close-bg: var(--winbtn-close-bg-value);
+  --winbtn-close-ink: var(--winbtn-close-ink-value);
+  --winbtn-mac-edge: inset 0 0 0 1px rgba(0, 0, 0, 0.22);
+
+  /* The selected sidebar row is an accent tint with no outline, which is
+     what macOS draws in a key window. */
+  --nav-bg: color-mix(in srgb, var(--rung-7) 14%, transparent);
+  --nav-edge: none;
+  --thumb-edge: var(--thumb-edge-value);
+  --field-inset: 0 0 0 0 transparent;
+  --field-inset-focus: 0 0 0 0 transparent;
+  --field-focus-edge: inset 0 0 0 1px var(--rung-7);
+  --field-focus-ring: 0 0 0 3px color-mix(in srgb, var(--rung-7) 30%, transparent);
+  --switch-on-bg: var(--rung-7);
+  --switch-on-edge: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
+
+  /* A heading is a label in AppKit, never a gradient; the tint keeps one
+     treatment for every heading that asks for it. */
+  --display-tint: linear-gradient(90deg, var(--ink), var(--ink));
+  --btn-face: var(--btn-face-value);
+  --btn-shadow: var(--btn-shadow-value);
+  --btn-shadow-hover: var(--btn-shadow-hover-value);
+
+  --qr-shadow: var(--qr-shadow-value);
+  --meter-fill: var(--accent);
+  --dropzone-over-bg: color-mix(in srgb, var(--rung-7) 10%, transparent);
+  --dropzone-over-edge: inset 0 0 0 1px color-mix(in srgb, var(--rung-7) 55%, transparent);
+  --dropzone-busy-bg: color-mix(in srgb, var(--rung-7) 6%, transparent);
+  --dropzone-busy-edge: inset 0 0 0 1px color-mix(in srgb, var(--rung-7) 30%, transparent);
+  --flag-soft: color-mix(in srgb, var(--rung-9) 10%, transparent);
+  --flag-edge: inset 0 0 0 1px color-mix(in srgb, var(--rung-9) 26%, transparent);
+
+  /* Geometry: 10 on a card, 6 on a control, 4 inside one. */
+  --radius: 10px;
+  --radius-sm: 6px;
+  --radius-xs: 4px;
+  --radius-segment: 7px;
+
+  /* Control heights, from AppKit's sizes at 13px type. A push button is
+     28px (22 small), a field 30, a sidebar row 28, a segment 24. */
+  --pad-btn: 4px 12px;
+  --pad-btn-sm: 2px 9px;
+  --pad-btn-quiet: 3px 8px;
+  --pad-field: 5px 0;
+  --pad-row: 4px 8px;
+  --pad-tab: 3px 11px;
+  /* A disabled control is drawn dimmer, not ghosted: AppKit uses ~0.32. */
+  --disabled-opacity: 0.32;
+  /* AppKit's small headers are the text face in semibold, never mono. */
+  --font-label: var(--font-sans);
+
+  --ease: cubic-bezier(0.25, 0.1, 0.25, 1);
+  --dur: 140ms;
+
+  /* The titlebar row: the sidebar climbs under it, so its height is shared. */
+  --bar-h: 46px;
+}

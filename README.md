@@ -130,12 +130,16 @@ beside the installer.
 ```
 LICENSE, NOTICE         AGPL-3.0 text, and what derives from Immich
 docs/licensing.md       every component a build conveys, and its obligations
+docs/mission-appearance.md  the brief the appearance work was built from, and the numbers
 PLATFORMS.md            which file is Mac, which is Windows, which is neither
 PLAN.md                 design record, and the M0 evidence behind it
-src/styles/tokens.css   the only source of colour, radius and motion
-src/styles/app.css      shell, panel recipe, primitives, views
+src/styles/             the Mac look, one file per concern — base, shell, page, controls,
+                        pages/, responsive — with index.css stating the import order once
+src/styles/styles/      its colours: system.css, one ladder of ten rungs walked from either
+                        end — light and dark — and nothing that is not about a look
+src/styles/windows/     the Windows look: one sheet, one appearance, unchanged by any of this
 src/ui/                 button, field, panel, switch, pill, tabs
-src/app/                titlebar, sidebar, overview, storage, backups, logs, phone card
+src/app/                titlebar, sidebar, overview, storage, backups, logs, settings, phone card
 src-tauri/              the window and the supervisor: runtime, layout, import, watch, firewall, qr
   tauri.windows.conf.json NSIS only, per-user install; merged on Windows only
   tauri.macos.conf.json   app + dmg; merged on a Mac only; the rest of the bundle config is shared
@@ -146,6 +150,77 @@ immich/                 the Immich patch and what each change fixes
 ml/                     CLIP service for smart search
 spike/                  M0 probes, and the results they produced
 ```
+
+## Appearance
+
+The hub wears the macOS system look, in **Light** or **Dark**. Those are the only two appearances:
+the person using it picks one in **Settings**, the row at the foot of the sidebar. The choice
+applies as soon as it is clicked — there is nothing to save and nothing that can be left dirty —
+and it is stored as `uiStyle` in `settings.json`, so the next launch opens in it. **Dark is the
+default**, in the hub and in a fresh `settings.json` alike; an unknown or removed id (an older
+build's `glass`, say) falls back to it. The library page is Immich's own and keeps its own
+appearance either way.
+
+| Look | What it is |
+| --- | --- |
+| **Light** | `#ECECEC` window, a flush translucent sidebar under the titlebar, content directly on the window, `rgba(60,60,67,.29)` hairlines doing the containing, 28px controls, San Francisco, one blue action. |
+| **Dark** | The same window at night: `#1e1e1e` window, `#409cff` accent. Not an inversion — see below for why its button is a darker blue than its text. |
+
+All of that is the Mac build. The Windows build is a separate sheet,
+`src/styles/windows/app.css` — the look it has shipped since before any of this work — and it has
+one appearance rather than two. `vite.config.ts` picks the sheet from the platform that runs the
+build, so a bundle carries only its own, and the pieces that belong to the Mac look alone (the
+appearance picker, the frame colour the shell paints, the circle window controls) sit behind the
+same flag, `isMac` in `src/app/platform.ts`. The two drawings cannot share a sheet: every class
+name means the same thing in both, so whichever loaded second would restyle the other. Keeping
+them apart is what stops a Mac restyle reaching a Windows window.
+
+One file, `src/styles/styles/system.css`, answers to `<html data-style="…">` for both walks.
+Every colour, radius, duration and control size a component names is defined there, and each walk
+fills the same ten ordered rungs — page, sunk, hairline, boundary, three ink tiers, accent,
+on-colour, flag — so Dark is a walk from the other end of the ladder, not a copy of Light's
+values. Every rung is read by the shell: the ladder is exactly the surfaces a native grouped list
+needs, not a superset kept for a card design that no longer ships. There is no second look to
+inherit from or reconcile with: the shared token layer, the shell-composition hooks and the
+Glass-era effect slots were removed with the looks that needed them. The only literals left in
+the stylesheets are the traffic lights' three colours — a platform signal, not a design
+choice — and the QR's white plate.
+
+### The shell is an AppKit window
+
+With one look there is one composition, so it is written once, directly, where the components
+read it. `.shell` is a full-bleed grid: no gutter, no gap. `.panel.sidebar` is an edge of the
+window — it climbs under the titlebar by `--bar-h` so the traffic lights sit on its translucent
+wash, and a `separatorColor` rule on its right runs the full height. Every other `.panel` is a
+row, not a card: 14px 0 16px, no fill, no ring, no shadow, no corners, with the page supplying
+the 20px inset. Sections are separated by one hairline (`border-top: 1px solid var(--line)`),
+which is how AppKit divides a grouped list. The hero and split are one column, because a 1024pt
+window with a 222pt sidebar has no room for a magazine hero. The titlebar has no band of its own
+and paints above the sidebar, so the stop lights and the window name land on it, as they do in
+Mail or Notes.
+
+Control geometry is still tokenised, because it is shared by every control rather than a number
+buried in one: `--pad-btn`, `--pad-btn-sm`, `--pad-field`, `--pad-row` and `--pad-tab` are what
+make a 28px button out of the same `.btn`, and `--radius-segment` is why the segmented control is
+a 7px rounded rect rather than a capsule. `--font-label` exists for the same reason: the labels
+use the text face while ports, paths and log lines stay mono everywhere.
+
+Every text pair is measured against the surface it actually lands on. With the cards gone, both
+walks put every tier on the window and the sidebar rather than on `#ffffff`/`#2c2c2e`. Against
+those real composites, light measures `--ink` 14.2:1,
+`--ink-2` 7.0:1, `--ink-3` 5.1:1 and accent 4.7:1 (sidebar: 15.2, 7.4, 5.3, 5.0), and dark
+measures 14.9, 9.0, 6.2 and 5.9 (sidebar: 13.2, 8.1, 5.7, 5.2). The control boundary holds 3.2:1
+light and 3.6:1 dark, and a white label on the button face is 5.6:1 light and 5.8:1 dark. The
+**separator is deliberately not a 3:1 line**: it is `separatorColor` at 1.7:1 light and 1.6:1
+dark, exactly what AppKit draws, and it is decorative — sections are also delimited by their
+headings and their padding. A control whose only boundary is a hairline uses `--line-control`
+(3:1+) instead, which is why `--line-field` and `--line-control` exist.
+
+The dark walk re-measures three rungs instead of mirroring them, because a mirror reads wrong:
+its `--ink-3` is 78% light and 62% dark rather than AppKit's 52%, because that tier carries
+10px labels; its boundary is 60% light and 42% dark rather than 29%; and its button face is
+darker than its accent so a white label clears 4.5:1 while accent text stays legible — the one
+place the look needs two blues. Numbers in `docs/mission-appearance.md` §11–§13.
 
 ## State
 
@@ -168,6 +243,14 @@ onboarding ran to completion, the server imported `immich-plugin-core@2.0.1` (14
 listed three workflow templates, and a smart search for "a bee on gravel" returned the photo
 that had just been uploaded. A `kill -9` of the app left a renamed `immich-api` orphan holding
 port 2283, which is what the next launch now reclaims: one listener, no parentless processes.
+
+The appearance bar has been driven for real in the packaged app: on 30 Oct, from the bundle
+built that morning, a real click on **Light** and then on **Dark** wrote `light` and `dark` to
+`settings.json` and re-skinned the window — titlebar and frame included — in place, with no
+reload. Quitting and relaunching came back on the saved look from the first painted frame:
+`#ebebeb` for Light and `#1e1e1e` for Dark, never a frame of the other one. Overview, Storage
+and Logs were walked in both walks. The `apple-dark` value left behind by an earlier build
+opened as Dark rather than leaving the window unstyled.
 
 What is still unverified here: the hub's own first-run screen and folder picker have only ever
 been driven by hand, and the phone pairing has not been tried since the two trees were merged.

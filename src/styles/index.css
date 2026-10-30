@@ -1,0 +1,19 @@
+/* The stylesheet order is the cascade, stated here once:
+
+     look -> base -> shell -> page -> controls -> pages -> responsive
+
+   The look comes first because every other file reads its tokens; later files
+   may win at equal specificity, so this is the only place the order is decided.
+   Responsive comes last so a breakpoint can override the base rules. */
+
+@import "./styles/system.css";
+@import "./base.css";
+@import "./shell.css";
+@import "./page.css";
+@import "./controls.css";
+@import "./pages/overview.css";
+@import "./pages/storage.css";
+@import "./pages/logs.css";
+@import "./pages/settings.css";
+@import "./pages/first-run.css";
+@import "./responsive.css";

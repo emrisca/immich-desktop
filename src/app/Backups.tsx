@@ -14,7 +14,7 @@ export function Backups() {
         </p>
       </header>
 
-      <Panel index={1}>
+      <Panel>
         <div className="section-head">
           <p className="eyebrow">Schedule</p>
           <span className="section-head__note">{backups.schedule}</span>

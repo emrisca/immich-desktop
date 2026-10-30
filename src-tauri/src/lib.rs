@@ -548,6 +548,93 @@ fn set_library_folder(path: String, state: State<'_, Arc<Shared>>) -> Result<Sta
     Ok(snapshot(&state, Some("Library folder updated.".into())))
 }
 
+/// The look a fresh install opens on, and the one an unreadable or stale
+/// settings value falls back to. Dark, because the system look is what this hub
+/// is for.
+pub const DEFAULT_UI_STYLE: &str = "dark";
+
+/// The looks the hub can wear.
+///
+/// Kept here as well as in the frontend because the shell restyles the window
+/// frame and the native theme from the same value: a look the hub knew and the
+/// shell did not would put a light page in a dark frame.
+const UI_STYLES: [&str; 2] = ["light", "dark"];
+
+/// The frame colour and native theme a style asks for.
+///
+/// Split out from `apply_style_chrome` so a test can check it: a style the hub
+/// knows and this match does not would land on the default's frame, sharing its
+/// colour and failing that test — which is the only thing that would notice.
+/// Only the Mac build paints the frame, so only it — and the tests that check
+/// every look has one — compile this.
+#[cfg(any(target_os = "macos", test))]
+fn chrome_for(style: &str) -> (u8, u8, u8, tauri::Theme) {
+    match style {
+        // NSWindow's own background in each appearance.
+        "light" => (0xec, 0xec, 0xec, tauri::Theme::Light),
+        // Dark, and the default. A settings file from a build that shipped a look
+        // this one no longer has lands here too, matching the page: the webview
+        // falls back to the same look, so the two can never disagree.
+        _ => (0x1e, 0x1e, 0x1e, tauri::Theme::Dark),
+    }
+}
+
+/// Paint the window to match the style behind the webview.
+///
+/// The frame and the native chrome live outside CSS. Without this, a light page
+/// sits in a `#080711` window with dark scrollbars and dark dialogs, which reads
+/// as two apps rather than one. Called only when the style actually changes:
+/// re-applying a value the window already has makes macOS reset its frame, the
+/// trap the decorations switch already hit once.
+///
+/// macOS only. The Windows build wears the one look it has always had, drawn by
+/// `src/styles/windows/app.css`, so there is no second frame to paint — and
+/// reaching in to set one would restyle a window that is not ours to restyle.
+fn apply_style_chrome(window: &tauri::WebviewWindow, style: &str) {
+    #[cfg(target_os = "macos")]
+    {
+        let (red, green, blue, theme) = chrome_for(style);
+        let _ = window.set_background_color(Some(tauri::window::Color(red, green, blue, 0xff)));
+        let _ = window.set_theme(Some(theme));
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = (window, style);
+}
+
+/// The look the hub wears. Applies immediately in the page; this makes it
+/// survive a relaunch, and drags the window frame along with it.
+#[tauri::command]
+fn set_ui_style(
+    app: tauri::AppHandle,
+    style: String,
+    state: State<'_, Arc<Shared>>,
+) -> Result<StatusView, String> {
+    if !UI_STYLES.contains(&style.as_str()) {
+        return Err(format!("Unknown style: {style}"));
+    }
+
+    let changed = {
+        let mut settings = state.settings.lock().expect("settings lock");
+        if settings.ui_style == style {
+            false
+        } else {
+            settings.ui_style = style.clone();
+            settings
+                .save(&state.config_dir)
+                .map_err(|error| format!("Could not save settings: {error}"))?;
+            true
+        }
+    };
+
+    if changed {
+        if let Some(window) = app.get_webview_window("main") {
+            apply_style_chrome(&window, &style);
+        }
+    }
+
+    Ok(snapshot(&state, None))
+}
+
 /// Whether a runtime root really contains something to run.
 fn holds_runtime(root: &str) -> bool {
     let root = Path::new(root);
@@ -637,6 +724,13 @@ pub fn run() {
             });
             app.manage(shared.clone());
 
+            // The frame and the native chrome follow the saved style from the
+            // first frame, not from the first click.
+            if let Some(window) = app.get_webview_window("main") {
+                let style = shared.settings.lock().expect("settings lock").ui_style.clone();
+                apply_style_chrome(&window, &style);
+            }
+
 
             // The point of the app is that it is already running when it opens.
             shared.runtime.lock().expect("runtime lock").start();
@@ -721,6 +815,7 @@ pub fn run() {
             watch_status,
             set_watch_folder,
             set_allow_phones,
+            set_ui_style,
             allow_firewall,
             phone_qr
         ])
@@ -739,7 +834,7 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::{hub_target, is_library_page};
+    use super::{chrome_for, hub_target, is_library_page, DEFAULT_UI_STYLE, UI_STYLES};
 
     /// The chip used to carry `origin()`, which is the literal string `null` for
     /// the `tauri:` scheme — the bug that sent the library to `/null` on the
@@ -777,5 +872,32 @@ mod tests {
             let url = tauri::Url::parse(hub).expect("parses");
             assert!(!is_library_page(&url), "{hub} is the hub");
         }
+    }
+
+    /// Every look the hub can send has to have its own frame. The fallback in
+    /// `chrome_for` is the default look's frame, so a look missing from that
+    /// match would share Dark's colour and fail the distinctness check below.
+    #[test]
+    fn every_look_has_its_own_frame_and_theme() {
+        let mut frames = std::collections::HashSet::new();
+        let mut dark = std::collections::HashSet::new();
+        for style in UI_STYLES {
+            let (red, green, blue, theme) = chrome_for(style);
+            assert!(frames.insert((red, green, blue)), "{style} shares a frame colour");
+            dark.insert(matches!(theme, tauri::Theme::Dark));
+        }
+        assert_eq!(frames.len(), UI_STYLES.len());
+        // A light page in a dark frame is the bug this function exists to stop,
+        // and it is invisible in a unit test unless the two walks disagree here.
+        assert_eq!(dark.len(), 2, "the two walks need opposite native themes");
+        assert!(matches!(chrome_for("light").3, tauri::Theme::Light));
+        assert!(matches!(chrome_for("dark").3, tauri::Theme::Dark));
+    }
+
+    /// The default has to be one the hub actually offers, or a fresh install
+    /// would open on a frame whose page never loads.
+    #[test]
+    fn the_default_look_is_one_the_hub_has() {
+        assert!(UI_STYLES.contains(&DEFAULT_UI_STYLE), "{DEFAULT_UI_STYLE} is not shipped");
     }
 }

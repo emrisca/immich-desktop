@@ -48,7 +48,7 @@ export function FirstRun({ onCreated }: Props) {
         </p>
       </header>
 
-      <Panel index={1}>
+      <Panel>
         <form
           className="setup__form"
           onSubmit={(event) => {

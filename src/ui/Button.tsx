@@ -9,7 +9,8 @@ type Props = ButtonHTMLAttributes<HTMLButtonElement> & {
 };
 
 /**
- * Glass button. Primary carries the shine sweep; press is a 240ms scale to .98.
+ * A push button: primary is the one action on a page, ghost is the second, quiet is
+ * inline text. It darkens on press, as an AppKit control does.
  * `type="button"` is the default so a button inside a form never submits by accident.
  */
 export function Button({ variant = "ghost", size = "md", className, children, ...rest }: Props) {

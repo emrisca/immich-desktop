@@ -27,6 +27,10 @@ pub struct Settings {
     /// Folder whose new media is uploaded automatically; empty means nothing is
     /// watched.
     pub watch_folder: String,
+    /// The look the hub wears. A plain string, not an enum: a settings file
+    /// written by a newer build must load here, and an unknown value falls back
+    /// to the default instead of leaving the window unstyled.
+    pub ui_style: String,
 }
 
 impl Default for Settings {
@@ -41,6 +45,7 @@ impl Default for Settings {
             machine_learning: false,
             api_key: String::new(),
             watch_folder: String::new(),
+            ui_style: String::from(crate::DEFAULT_UI_STYLE),
         }
     }
 }
@@ -100,5 +105,31 @@ impl Settings {
         let temp = path.with_extension("json.tmp");
         fs::write(&temp, serde_json::to_string_pretty(self)?)?;
         fs::rename(temp, path)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Settings;
+
+    /// A settings file written before the hub had more than one look: the new
+    /// field is absent, and the app has to open in the default look rather than
+    /// unstyled or refusing to load.
+    #[test]
+    fn a_file_from_before_styles_loads_as_the_default() {
+        let json = r#"{
+            "libraryFolder": "/tmp/library",
+            "serverPort": 2283,
+            "databasePort": 54329,
+            "mlPort": 3003,
+            "runtimeRoot": "",
+            "allowPhones": true,
+            "machineLearning": false,
+            "apiKey": "",
+            "watchFolder": ""
+        }"#;
+        let settings: Settings = serde_json::from_str(json).expect("older settings load");
+        assert_eq!(settings.ui_style, crate::DEFAULT_UI_STYLE);
+        assert_eq!(settings.ui_style, "dark");
     }
 }

@@ -24,6 +24,8 @@ export type Status = {
   allowPhones: boolean;
   /** Whether Windows lets the phone's packets reach the server. */
   firewall: boolean;
+  /** The look the hub wears, as stored by the shell. */
+  uiStyle: string;
 };
 
 export type LogSource = {
@@ -98,6 +100,11 @@ export function stopRuntime(): Promise<Status> {
 
 export function setLibraryFolder(path: string): Promise<Status> {
   return call<Status>("set_library_folder", { path });
+}
+
+/** Saves the look and restyles the window frame with it. */
+export function setUiStyle(style: string): Promise<Status> {
+  return call<Status>("set_ui_style", { style });
 }
 
 /** Opens Immich's own web app in its own window, pointed at this server. */

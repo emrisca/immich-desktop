@@ -141,6 +141,8 @@ pub struct StatusView {
     pub allow_phones: bool,
     /// Whether Windows will let the phone's packets reach the server.
     pub firewall: bool,
+    /// The look the hub wears, as stored in settings.
+    pub ui_style: String,
 }
 
 impl Runtime {
@@ -169,6 +171,7 @@ impl Runtime {
             allow_phones: settings.allow_phones,
             // Filled in by the shell, which owns the cached firewall state.
             firewall: false,
+            ui_style: settings.ui_style.clone(),
         }
     }
 

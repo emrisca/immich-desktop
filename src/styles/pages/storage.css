@@ -1,0 +1,77 @@
+/* Storage and Backups: the watched folder, empty states and key/value rows. */
+
+/* ══ watched folder ═══════════════════════════════════════════ */
+
+.watch {
+  margin-top: 16px;
+  padding-top: 15px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.watch__path {
+  margin: 0 0 10px;
+  padding: 7px 10px;
+  border-radius: var(--radius-xs);
+  background: var(--well);
+  box-shadow: inset 0 0 0 1px var(--line-soft);
+  font-size: 11.5px;
+  color: var(--ink-2);
+  overflow-wrap: anywhere;
+}
+
+.watch__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ══ empty states ═════════════════════════════════════════════ */
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 28px 20px;
+  border-radius: var(--radius-sm);
+  background: var(--fill-1);
+  box-shadow: inset 0 0 0 1px var(--line-soft);
+  text-align: center;
+}
+
+.empty__title {
+  font-size: 12.5px;
+  color: var(--ink);
+}
+
+.empty__note {
+  max-width: 46ch;
+  font-size: 11.5px;
+  color: var(--ink-2);
+}
+
+/* ══ key/value rows ═══════════════════════════════════════════ */
+
+.kv {
+  display: grid;
+  grid-template-columns: 132px minmax(0, 1fr);
+  gap: 8px 14px;
+  margin: 0;
+  font-size: 12.5px;
+}
+
+.kv dt {
+  align-self: center;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.kv dd {
+  margin: 0;
+  color: var(--ink-2);
+  overflow-wrap: anywhere;
+}

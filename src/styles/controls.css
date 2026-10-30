@@ -1,0 +1,242 @@
+/* The primitives every view reuses: panel, buttons, field, tabs, switch. */
+
+/* ══ panels ═══════════════════════════════════════════════════ */
+
+/* A section is a row on the window, not a floating card. */
+.panel {
+  position: relative;
+  padding: 14px 0 16px;
+}
+
+.panel--hero {
+  padding: 6px 0 10px;
+}
+
+/* ══ buttons ══════════════════════════════════════════════════ */
+
+.btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: var(--pad-btn);
+  border: 0;
+  border-radius: var(--radius-sm);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 550;
+  letter-spacing: -0.005em;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    box-shadow var(--dur) var(--ease),
+    background-color 180ms ease,
+    color 180ms ease;
+}
+
+.btn:disabled {
+  cursor: not-allowed;
+  opacity: var(--disabled-opacity);
+}
+
+/* The one action on a page. */
+.btn--primary {
+  overflow: hidden;
+  background: var(--btn-face);
+  color: var(--on-accent);
+  box-shadow: var(--btn-shadow);
+}
+
+.btn--primary:hover:not(:disabled) {
+  box-shadow: var(--btn-shadow-hover);
+}
+
+.btn--ghost {
+  background: var(--fill-6);
+  color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--line-control);
+}
+
+.btn--ghost:hover:not(:disabled) {
+  background: var(--fill-9);
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+}
+
+.btn--quiet {
+  padding: var(--pad-btn-quiet);
+  background: none;
+  color: var(--ink-2);
+}
+
+.btn--quiet:hover:not(:disabled) {
+  background: var(--fill-6);
+  color: var(--ink);
+}
+
+.btn--sm {
+  padding: var(--pad-btn-sm);
+  font-size: 11.5px;
+}
+
+/* ══ field ════════════════════════════════════════════════════ */
+
+.field {
+  display: block;
+}
+
+.field__label {
+  display: block;
+  margin-bottom: 6px;
+  font-family: var(--font-label);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.field__box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 4px 0 12px;
+  border-radius: var(--radius-sm);
+  background: var(--well);
+  box-shadow: var(--field-inset), inset 0 0 0 1px var(--line-field);
+  transition: box-shadow var(--dur) var(--ease);
+}
+
+.field__box:focus-within {
+  box-shadow: var(--field-inset-focus), var(--field-focus-edge), var(--field-focus-ring);
+}
+
+.field__input {
+  min-width: 0;
+  flex: 1;
+  padding: var(--pad-field);
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+}
+
+.field__input::placeholder {
+  color: var(--ink-3);
+}
+
+.field--mono .field__input {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  letter-spacing: 0.01em;
+}
+
+.field__hint {
+  margin: 7px 0 0;
+  font-size: 11.5px;
+  color: var(--ink-2);
+}
+
+/* ══ tabs ═════════════════════════════════════════════════════ */
+
+.tabs {
+  position: relative;
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: var(--radius-segment);
+  background: var(--well);
+  box-shadow: inset 0 0 0 1px var(--line-field);
+}
+
+.tabs__thumb {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: 0;
+  /* measured from the selected tab, so it hugs labels of any width */
+  width: var(--thumb-w, 0px);
+  /* one step inside the track, so a capsule stays a capsule and a
+     segmented control keeps its inner corner */
+  border-radius: calc(var(--radius-segment) - 3px);
+  background: var(--fill-9);
+  box-shadow: var(--thumb-edge);
+  transform: translateX(var(--thumb-x, 0px));
+  transition:
+    transform var(--dur) var(--ease),
+    width var(--dur) var(--ease),
+    box-shadow 10ms linear;
+  pointer-events: none;
+}
+
+.tabs__tab {
+  position: relative;
+  z-index: 1;
+  padding: var(--pad-tab);
+  border: 0;
+  border-radius: calc(var(--radius-segment) - 3px);
+  background: none;
+  color: var(--ink-2);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition: color 180ms ease;
+}
+
+.tabs__tab[aria-selected="true"] {
+  color: var(--ink);
+}
+
+.tabs__tab:hover {
+  color: var(--ink);
+}
+
+/* ══ switch ═══════════════════════════════════════════════════ */
+
+.switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink-2);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.switch__track {
+  position: relative;
+  width: 38px;
+  height: 22px;
+  flex: none;
+  border-radius: 999px;
+  background: var(--fill-8);
+  box-shadow: inset 0 0 0 1px var(--line-control);
+  transition: background-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+}
+
+.switch__knob {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  background: var(--ink-2);
+  transition:
+    transform var(--dur) var(--ease),
+    background-color var(--dur) var(--ease);
+}
+
+.switch[aria-checked="true"] .switch__track {
+  background: var(--switch-on-bg);
+  box-shadow: var(--switch-on-edge);
+}
+
+.switch[aria-checked="true"] .switch__knob {
+  background: var(--on-accent);
+  transform: translateX(16px);
+}

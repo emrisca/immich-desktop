@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { isMac } from "@/app/platform";
 
 // The window API only exists inside Tauri. In a browser preview the controls are
 // rendered but inert, so the layout can still be judged.
@@ -6,10 +7,8 @@ const inTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window
 
 // The window is frameless everywhere, so these buttons are the only way to move,
 // zoom or close it. On a Mac they belong on the left, as circles — three squares
-// on the right read as a broken window, not a deliberate one.
-const isMac =
-  typeof navigator !== "undefined" &&
-  /mac/i.test(`${navigator.userAgent} ${navigator.platform ?? ""}`);
+// on the right read as a broken window, not a deliberate one. Which of the two is
+// drawn is the build's answer, the same one that chose the stylesheet.
 
 type WindowApi = {
   minimize: () => Promise<void>;

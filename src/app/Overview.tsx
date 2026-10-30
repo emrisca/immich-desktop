@@ -63,7 +63,7 @@ function Services({ status, live }: { status: Status | null; live: boolean }) {
   const running = list.filter((row) => row.state === "running").length;
 
   return (
-    <Panel index={2}>
+    <Panel>
       <div className="section-head">
         <p className="eyebrow">Services</p>
         <span className="section-head__note">
@@ -155,7 +155,7 @@ function PhoneCard({
   };
 
   return (
-    <Panel index={1} blur>
+    <Panel>
       <div className="phone">
         <div>
           <p className="eyebrow">Phone connection</p>
@@ -230,7 +230,7 @@ function LibrarySummary({ status, live }: { status: Status | null; live: boolean
   const value = live ? (ready ? 100 : 0) : library.share;
 
   return (
-    <Panel index={4}>
+    <Panel>
       <div className="section-head">
         <p className="eyebrow">Library</p>
         <span className="section-head__note">
@@ -290,7 +290,7 @@ export function Overview({
   return (
     <div className="page">
       <div className="hero">
-        <Panel index={0} className="hero__intro panel--hero">
+        <Panel className="hero__intro panel--hero">
           <p className="eyebrow">On this machine</p>
           <h1 className="display display--gradient">Your photos, on your machine.</h1>
           <p className="lede">
