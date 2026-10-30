@@ -111,6 +111,10 @@ Miss either extension and Immich fails on the first migration or the first inser
 of the tree. `--runtime <dir>` writes somewhere other than `runtime/`, which is what to use
 when testing the assembler without touching the runtime the app runs from.
 
+`runtime/www` is compiled from `web/` in the pinned Immich checkout on every build. There is no
+prebuilt copy to fall back on and no reuse of an earlier `runtime/www`: both used to ship
+whatever interface happened to be on disk, behind a log line that read like a build.
+
 The two runtimes are not interchangeable. The bundler copies `runtime/` into the app
 unchanged, so a runtime from the other platform installs and then fails to start every
 service.
@@ -135,6 +139,8 @@ src/app/                titlebar, sidebar, overview, storage, backups, logs, pho
 src-tauri/              the window and the supervisor: runtime, layout, import, watch, firewall, qr
   tauri.windows.conf.json NSIS only, per-user install; merged on Windows only
   tauri.macos.conf.json   app + dmg; merged on a Mac only; the rest of the bundle config is shared
+  icons/icon-source.svg   the only icon art; `npx tauri icon src-tauri/icons/icon-source.svg`
+                          writes every platform file from it
 scripts/                runtime assemblers, per-platform build scripts, plugin build, source packaging
 immich/                 the Immich patch and what each change fixes
 ml/                     CLIP service for smart search
@@ -143,11 +149,25 @@ spike/                  M0 probes, and the results they produced
 
 ## State
 
-`cargo test` passes in `src-tauri`. The Windows assembler has been run end to end: it built the
+`cargo test` passes in `src-tauri`, including the tests that cover how the supervisor takes its
+own children back at startup. The Windows assembler has been run end to end: it built the
 patched server, the web UI, the plugin and the CLIP service, and the app started every service
 from the result. The server imported `immich-plugin-core@2.0.1` with 14 methods and three
 templates, which is what the Workflows view lists. An existing library and its database also
 came up on the rebuilt runtime, without a reset.
 
-The macOS half is not verified here. This machine is Windows, so nothing on this side proves
-the Mac runtime, the Mac bundle or the onboarding form.
+The macOS side has a build and a launch behind it. On 29 Oct 2026, from a fresh clone,
+`bash scripts/build-mac.sh` ran end to end: Node 24 and Postgres.app copied into `runtime/`,
+the patched server, the web UI and the plugin wasm built from source, typecheck clean, an app
+(1.46 GiB) and a dmg produced, the repair restoring 2,102 links inside the bundle with none
+dangling, the app re-signed and verifying, and both artefacts copied to `~/Downloads`. The
+runtime holds `uuid-ossp`, `vector` and a 2.4 MB `plugin.wasm`.
+
+That build was then run against a new library: the first admin was created and Immich's
+onboarding ran to completion, the server imported `immich-plugin-core@2.0.1` (14 methods) and
+listed three workflow templates, and a smart search for "a bee on gravel" returned the photo
+that had just been uploaded. A `kill -9` of the app left a renamed `immich-api` orphan holding
+port 2283, which is what the next launch now reclaims: one listener, no parentless processes.
+
+What is still unverified here: the hub's own first-run screen and folder picker have only ever
+been driven by hand, and the phone pairing has not been tried since the two trees were merged.

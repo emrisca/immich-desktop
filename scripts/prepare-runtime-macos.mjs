@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 /**
- * Assembles `apps/immich-desktop/runtime` on macOS.
+ * Assembles `runtime/` on macOS.
  *
- * On Windows the runtime is a folder of prebuilt binaries checked into the build
- * machine. Almost none of it transfers to a Mac: `node.exe` is not a Mach-O
+ * Windows assembles the same tree from upstream with
+ * `scripts/prepare-runtime-windows.mjs`, and almost none of it transfers to a Mac:
+ * `node.exe` is not a Mach-O
  * binary, Postgres' `bin` is PE, and `sharp` / `onnxruntime` are native modules
  * compiled per platform. This script rebuilds the same layout from upstream
  * sources, so the supervisor in `src-tauri` does not need to know which OS it is
@@ -17,7 +18,7 @@
  *   runtime/www                    the built Immich web UI
  *   runtime/ml                     CLIP service (optional, --skip-ml)
  *
- * Usage, from `apps/immich-desktop`:
+ * Usage, from the repository root:
  *
  *   node scripts/prepare-runtime-macos.mjs
  *   node scripts/prepare-runtime-macos.mjs --skip-ml --skip-models
@@ -649,20 +650,14 @@ async function fetchCorePlugin() {
 
 async function fetchWeb() {
   say("Immich web UI");
-  const prebuilt = option("www-source", path.join(root, "prebuilt", "www"));
+  // Built from `web/` in the pinned checkout, on every run. There used to be two
+  // shortcuts here — a `prebuilt/www` folder and an existing `runtime/www` — and
+  // both were silent: either one shipped whatever UI happened to be on disk, at
+  // whatever age, behind a log line that read like a fresh build. A couple of
+  // minutes of Vite is cheaper than an app that lies about its own version.
   const existing = path.join(runtime, "www");
-  if (existsSync(path.join(prebuilt, "index.html"))) {
-    fresh(existing);
-    cpSync(prebuilt, existing, { recursive: true });
-    note(`copied prebuilt/www → runtime/www (${path.relative(root, prebuilt)})`);
-    return;
-  }
-  if (existsSync(path.join(existing, "index.html"))) {
-    note("runtime/www already holds a build — reusing it");
-    return;
-  }
   if (dryRun) {
-    note("would build immich-web (pnpm --filter web build) and copy its output");
+    note("would build immich-web (pnpm --filter immich-web build) and copy web/build → runtime/www");
     return;
   }
   // The package is `immich-web`: `--filter web` matches nothing and the build

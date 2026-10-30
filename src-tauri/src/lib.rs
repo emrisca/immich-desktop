@@ -580,8 +580,9 @@ pub fn run() {
             }
 
             // A previous hard kill leaves Postgres and node behind; take our own
-            // children back before starting a new set.
-            Runtime::reap(&layout);
+            // children back before starting a new set, including any that lost the
+            // pid file that was supposed to make them findable.
+            Runtime::reap(&layout, &settings);
 
             let mut watcher = watch::Watch::load(&config_dir);
             watcher.sync(&settings.watch_folder);

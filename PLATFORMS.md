@@ -16,7 +16,7 @@ build output.
 2. Platform conditionals inside shared code are written down: `cfg(windows)` and
    `cfg(target_os = "macos")` in Rust, platform checks in `src/`. Those files stay shared and
    are listed under the shared table below, with the conditional noted.
-3. Generated output never crosses platforms. `runtime/`, `prebuilt/`, `.mac-cache/`,
+3. Generated output never crosses platforms. `runtime/`, `.mac-cache/`, `.win-cache/`,
    `src-tauri/target/` and `node_modules/` are per-machine and mostly gitignored.
 
 ## macOS only
@@ -27,7 +27,6 @@ build output.
 | `scripts/prepare-runtime-macos.mjs` | Assembles `runtime/` on a Mac: downloads Node 24 + Postgres.app + ffmpeg, builds the patched Immich with `pnpm`, prunes the PostGIS/GDAL tree, installs the arm64 `ffprobe`, builds the core plugin wasm, fetches CLIP models. |
 | `scripts/build-mac.sh` | One command: runtime, typecheck, `tauri build --bundles app,dmg`, repair the bundle, re-sign, rebuild the dmg, copy it to `~/Downloads`. Sets `RUSTUP_TOOLCHAIN=stable`. |
 | `scripts/repair-runtime-copy-macos.mjs` | Runs on the finished `.app` only: restores the directory symlinks Tauri's copier drops and the file symlinks it dereferences. Called by `build-mac.sh`; does nothing useful on Windows. |
-| `prebuilt/www/` | Staging copy of Immich's web UI used by the Mac assembler. Present in the Mac snapshot (`apps/immich-desktop-mac/prebuilt`), not in this tree. |
 
 macOS is also the only platform that needs `RUSTUP_TOOLCHAIN=stable` on a manual build, because
 of the Windows pin below.
@@ -40,6 +39,7 @@ of the Windows pin below.
 | `src-tauri/rust-toolchain.toml` | Pins `stable-x86_64-pc-windows-msvc`. A Mac build **cannot** use this toolchain, so it must override the file (`RUSTUP_TOOLCHAIN=stable`), which `build-mac.sh` does. |
 | `src-tauri/.cargo/config.toml` | `crt-static` rustflags, scoped to `[target.x86_64-pc-windows-msvc]`, so it is inert on a Mac. Deliberately contains **no** `[build] target`; that line is what used to break every Mac build. |
 | `src-tauri/src/firewall.rs` | Inbound rule via `ShellExecuteW` on Windows; returns `true` as a no-op elsewhere. |
+| `scripts/release-windows.ps1` | Runs the build, installs it silently, then checks the installed copy: installer and exe icons against `icon.ico`, the shortcut, the runtime files under `%LOCALAPPDATA%`, the file version, and a launch. No macOS counterpart; `build-mac.sh` is where the Mac stops. |
 | `scripts/prepare-runtime-windows.mjs` | Assembles `runtime/` on Windows: downloads Node 24, EnterpriseDB's PostgreSQL 17 and gyan's ffmpeg, compiles pgvector 0.8.7 with MSVC against EDB's headers and `postgres.lib`, then drops pgAdmin, StackBuilder, docs and headers. Builds the patched Immich with `pnpm` using a hoisted deploy so the tree has no absolute symlinks, builds the web UI, calls the plugin script, and installs the CLIP service and its models. |
 | `scripts/build-windows.ps1` | One command: `npm install`, the runtime assembler above, typecheck, `tauri build --bundles nsis`, then the checks — every file the supervisor needs present in the bundled `runtime/`, installer at least 250 MB, installer newer than the newest runtime file, and with 7-Zip present the same paths inside the installer itself — copies the installer to `%USERPROFILE%\Downloads`. `-SkipRuntime` reuses an assembled runtime; `--skip-*` goes to the assembler. |
 | `scripts/build-core-plugin-windows.mjs` | Builds `runtime/plugins/immich-plugin-core` from the Immich checkout: fetches extism-js and binaryen into `.win-cache/tools` (checksums checked), runs `plugin-sdk prepareBuild`, `tsc --noEmit`, esbuild and extism-js, validates the wasm, then copies `manifest.json` and `dist/` into the runtime. |
@@ -54,8 +54,9 @@ the `uuid-ossp` extension Immich's schema uses.
 | Path | Note |
 | --- | --- |
 | `src/`, `index.html`, `vite.config.ts`, `tsconfig.json` | The hub UI. Identical on both; `TitleBar.tsx` and `app.css` draw macOS traffic lights or Windows glyphs at runtime. |
-| `src-tauri/src/{lib,runtime,layout,import,watch,qr,settings,api,probe}.rs` | The window and the supervisor. Per-platform branches: `kill_tree` (`taskkill /F /T` versus `kill -9`), `LC_ALL`/`LANG` for Postgres (a macOS fix, harmless on Windows), and the hub address in `lib.rs`. |
+| `src-tauri/src/{lib,runtime,layout,import,watch,qr,settings,api,library,logs,probe}.rs` | The window and the supervisor. Per-platform branches: `kill_tree` (`taskkill /F /T` versus `ps` to collect descendants, then `kill -9` each — a bare `kill -9` leaves the forked `immich-api` behind), `process_name` (`tasklist` versus `ps -o comm=`), the startup orphan sweep (a documented no-op on Windows, where `tasklist` reports no path), `LC_ALL`/`LANG` for Postgres (a macOS fix, harmless on Windows), and the hub address in `lib.rs`. |
 | `src-tauri/tauri.conf.json` | Shared base: window, resources (`../runtime/` to `runtime/`), icons. Each platform's `tauri.<platform>.conf.json` sets its own `targets`, so the base one is only what the bundler falls back to on an unsupported platform. |
+| `src-tauri/icons/` | Every platform file (`icns`, `ico`, the PNG sizes, the Windows tile logos) is generated from `icon-source.svg` by `npx tauri icon src-tauri/icons/icon-source.svg`. Edit the SVG, never the bitmaps. |
 | `src-tauri/Cargo.toml`, `Cargo.lock` | One dependency set. `qrcode` is a normal dependency because `qr.rs` draws the QR on every platform. |
 | `immich/v3.3.5-desktop.patch` | The 11 upstream changes. Platform-neutral by design: no-Redis queue, ffmpeg HEIC, absolute-path fixes that work on `C:\` and `/`. |
 | `ml/` | CLIP service. `fetch-models.mjs` writes to `ml/models` unless `CLIP_MODEL_DIR` says otherwise. The native half (`onnxruntime-node`, `sharp`) is installed per platform into `runtime/ml`. |
@@ -71,7 +72,7 @@ the `uuid-ossp` extension Immich's schema uses.
 | `runtime/node` | Node 24 for win32-x64 | Node 24 for darwin-arm64 |
 | `runtime/pg` | EnterpriseDB PostgreSQL 17, pgvector 0.8.7 compiled with MSVC, pgAdmin and headers pruned | Postgres.app `Versions/17`, GIS pruned (371 to 230 MB) |
 | `runtime/ffmpeg` | gyan.dev essentials build | macOS build, `ffprobe` from `@ffprobe-installer` |
-| `runtime/www` | Immich web UI build | same, from `prebuilt/www` |
+| `runtime/www` | Immich web UI build | same, compiled from the pinned checkout |
 | `runtime/plugins/immich-plugin-core` | `scripts/build-core-plugin-windows.mjs` (2.5 MB) | built by the assembler (2.5 MB) |
 | `runtime/ml` | `npm install` on Windows | `npm install` in `runtime/ml` on the Mac |
 | `src-tauri/target` | MSVC build tree (+ `target-msvc` on this machine) | arm64 build tree |
@@ -80,6 +81,12 @@ the `uuid-ossp` extension Immich's schema uses.
 
 The bundler copies `runtime/` verbatim into the app's resources, so a runtime built for the
 wrong platform produces an app that installs and then cannot start a single service.
+
+One path differs in a way worth knowing before checking a build, because the two Postgres
+distributions lay their extensions out differently: on Windows the controls sit in
+`runtime/pg/share/extension`, and on macOS Postgres.app puts them in
+`runtime/pg/share/postgresql/extension`. `uuid-ossp.control` and `vector.control` are the two
+Immich cannot start without.
 
 ## Telling them apart without reading this
 
@@ -91,16 +98,14 @@ grep -rn 'cfg(windows)\|cfg(target_os = "macos")\|cfg(not(windows))' src-tauri/s
 ls src-tauri/tauri.*.conf.json scripts/ src-tauri/rust-toolchain.toml
 ```
 
-## The Mac snapshot beside this tree
+## One tree, no second checkout
 
-`apps/immich-desktop-mac/` is the Mac machine's tree, unzipped on 29 Oct 2026, and **not a
-second project**. It is there to diff against, quote from, and recover a file if a merge went
-wrong. Its `node_modules`, `runtime/`, `.mac-cache`, `.mac-build`, `dist`, `src-tauri/target`
-and `ml/models` were never in it; they are re-creatable and would be 12 GB.
+While the two machines were diverging, this repository was unzipped beside a copy of the Mac
+tree (`apps/immich-desktop-mac/`) to diff against. **That copy no longer exists, and it was never
+committed**: a file is recovered from git history or from the other machine's clone, never from a
+folder next to this one.
 
-The Windows tree is the authority. Every shared change from the Mac is already applied here, so
-`src/` and `src-tauri/src/` are identical on both sides. What differs is the Mac-only files
-above, `README.md` and `.gitignore` from the merge, the Windows-only headers added to
-`rust-toolchain.toml` and `.cargo/config.toml`, the renamed repair script, `package-lock.json`,
-and the extra `spike/` probes in this tree. **Take a future change from a Mac as a diff against
-this tree, not as a copy over it.**
+The rule it existed to protect still holds. Take a change made on the other platform as a diff
+against this tree, not as a copy over it: `runtime/` and the build output are per machine, and a
+copy from one undoes the fixes belonging to the other. The tables above are the whole list of
+what is genuinely platform-specific, so a change that is not in them belongs in a shared file.

@@ -10,6 +10,9 @@
 //!    is what makes Stop actually stick.
 //!  - Children are killed as a process tree: `node dist/main.js` forks the API
 //!    and the worker, so killing the parent alone would leak them.
+//!  - A pid file is a record, not a fact. It is forgotten only once the process
+//!    behind it is gone, and a child that lost its record is still found by where
+//!    it lives: nothing else runs out of this install's runtime.
 
 use std::io;
 use std::path::{Path, PathBuf};
@@ -18,7 +21,7 @@ use std::time::{Duration, Instant};
 
 use serde::Serialize;
 
-use crate::layout::{check_folder, Layout};
+use crate::layout::{check_folder, plain, Layout};
 use crate::probe;
 use crate::settings::Settings;
 
@@ -169,26 +172,41 @@ impl Runtime {
         }
     }
 
-    /// Kill whatever a previous run left behind. Only the recorded pid is
-    /// touched, and only when it still belongs to the expected executable, so a
-    /// recycled pid cannot take an unrelated process down.
-    pub fn reap(layout: &Layout) {
+    /// Kill whatever a previous run left behind.
+    ///
+    /// A hard kill used to leave this broken in a way nothing recovered from: the
+    /// recorded pid was compared against the expected executable, but on macOS and
+    /// Linux that lookup always answered nothing, so the comparison could never
+    /// succeed — and the pid file was deleted regardless. The children became
+    /// invisible and stayed up, which is how a server kept answering on 2283 hours
+    /// after its database had gone, with nothing on disk that knew it existed.
+    pub fn reap(layout: &Layout, settings: &Settings) {
         // The pid file is named after the service id, not after its executable.
         for (name, expected) in [("database", "postgres"), ("server", "node"), ("ml", "node")] {
             let path = layout.pid_file(name);
             let Ok(text) = std::fs::read_to_string(&path) else {
                 continue;
             };
-            if let Ok(pid) = text.trim().parse::<u32>() {
-                let matches = process_name(pid)
-                    .is_some_and(|actual| actual.trim_end_matches(".exe") == expected);
-                if matches {
+            let pid = text.trim().parse::<u32>().ok();
+            let ours = pid.and_then(process_name).is_some_and(|actual| {
+                actual.trim_end_matches(".exe").eq_ignore_ascii_case(expected)
+            });
+            if let Some(pid) = pid {
+                if ours {
                     eprintln!("reaping orphaned {name} ({pid}) from a previous run");
                     kill_tree(pid);
+                    if !wait_for_exit(pid) {
+                        // Keep the record: the next launch still knows what to kill.
+                        eprintln!("{name} ({pid}) survived the kill; keeping its pid file");
+                        continue;
+                    }
                 }
             }
+            // Nothing to kill: no pid, a pid that would not parse, a process that
+            // has already gone, or one recycled by an unrelated program.
             let _ = std::fs::remove_file(&path);
         }
+        sweep_orphans(settings, layout);
     }
 
     pub fn start(&mut self) {
@@ -288,7 +306,7 @@ impl Runtime {
             ));
         }
 
-        reclaim_port(settings.ml_port, "node");
+        reclaim_port(settings.ml_port, &["node"]);
         let log = self
             .logs_dir
             .clone()
@@ -487,7 +505,7 @@ impl Runtime {
     fn spawn_database(&mut self, settings: &Settings, layout: &Layout) -> io::Result<()> {
         layout.create()?;
         self.logs_dir = Some(layout.logs.clone());
-        reclaim_port(settings.database_port, "postgres");
+        reclaim_port(settings.database_port, &["postgres"]);
         if !layout.is_initialised() {
             init_cluster(settings, layout)?;
         }
@@ -537,7 +555,11 @@ impl Runtime {
             ));
         }
 
-        reclaim_port(settings.server_port, "node");
+        // Immich rewrites its own process name to `immich-api`, and the orphan a
+        // hard kill leaves behind is exactly that: a second listener on this port,
+        // bound with SO_REUSEPORT, sharing requests with the new one while its
+        // database is gone. Both names are ours.
+        reclaim_port(settings.server_port, &["node", "immich-api"]);
 
         // Immich serves its web app from `$IMMICH_BUILD_DATA/www`, and only when
         // that folder exists; without it the server is API-only. The desktop app
@@ -759,25 +781,118 @@ fn database_exists(bin: &Path, port: &str) -> io::Result<Option<bool>> {
     Ok(Some(String::from_utf8_lossy(&output.stdout).trim() == "1"))
 }
 
+/// Wait for a killed process to actually go away: a signal is a request, and the
+/// pid stays listed while the kernel tears the task down.
+fn wait_for_exit(pid: u32) -> bool {
+    for _ in 0..15 {
+        if process_name(pid).is_none() {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    false
+}
+
+/// Children that never got a pid file, or lost the one they had.
+///
+/// They can still be found by where they live: no other program runs a binary out
+/// of this install's runtime, so a process whose *executable* is in there is one
+/// this app started. The test is the executable and not the command line on
+/// purpose — a command line naming the library is what `ffmpeg`, the Immich CLI and
+/// a user's own `tail -f` look like, and none of those are ours to kill. `ps`
+/// reports the executable path and keeps reporting it after the binary has been
+/// deleted from under a running process, which is exactly the case that leaves a
+/// server up with no database, no pid file, and nothing to blame.
+#[cfg(not(windows))]
+fn sweep_orphans(settings: &Settings, _layout: &Layout) {
+    // The separator is part of the needle so `/Apps/Immich` cannot match
+    // `/Apps/Immich-old` next door.
+    fn push(text: String, needles: &mut Vec<String>) {
+        let needle = if text.ends_with('/') {
+            text
+        } else {
+            format!("{text}/")
+        };
+        if !needles.contains(&needle) {
+            needles.push(needle);
+        }
+    }
+
+    let mut needles: Vec<String> = Vec::new();
+    let root = Path::new(&settings.runtime_root);
+    // The kernel records the path a process was exec'd from, which on macOS is the
+    // resolved one: `/var/...` is really `/private/var/...`. Both spellings have to
+    // be looked for, or the sweep silently matches nothing.
+    if let Ok(real) = std::fs::canonicalize(root) {
+        push(plain(&real), &mut needles);
+    }
+    let text = plain(root);
+    // A bare `/` would match every process on the machine.
+    if text.len() > 1 {
+        push(text, &mut needles);
+    }
+    if needles.is_empty() {
+        return;
+    }
+
+    let Ok(output) = Command::new("ps").args(["-Aww", "-o", "pid=,comm="]).output() else {
+        return;
+    };
+    let text = String::from_utf8_lossy(&output.stdout);
+    let me = std::process::id();
+    for line in text.lines() {
+        let Some((pid, rest)) = line.trim_start().split_once(char::is_whitespace) else {
+            continue;
+        };
+        let Ok(pid) = pid.parse::<u32>() else {
+            continue;
+        };
+        if pid == 0 || pid == me {
+            continue;
+        }
+        if !needles.iter().any(|needle| rest.contains(needle.as_str())) {
+            continue;
+        }
+        eprintln!(
+            "killing leftover process {pid} from a previous run: {}",
+            rest.trim()
+        );
+        kill_tree(pid);
+    }
+}
+
+/// Windows has no equivalent of the sweep: `tasklist` reports an image name but
+/// not a path, and the tools that report one are not on every install. A recorded
+/// pid still works there, and `reclaim_port` takes each port back from the image
+/// that holds it before that service is spawned.
+#[cfg(windows)]
+fn sweep_orphans(_settings: &Settings, _layout: &Layout) {}
+
 /// A hard kill of the app (Task Manager, a panic, a power cut) can leave a
 /// child holding its port, and the next launch then cannot bind. Before each
 /// spawn, take our own port back — but only from a process whose image is the
 /// one we started, so an unrelated app on a recycled port is never killed.
-fn reclaim_port(port: u16, expected: &str) {
+fn reclaim_port(port: u16, expected: &[&str]) {
     let Some(pid) = listener_pid(port) else {
         return;
     };
     let ours = match process_name(pid) {
-        Some(name) => name.trim_end_matches(".exe") == expected,
+        Some(name) => {
+            let name = name.trim_end_matches(".exe");
+            expected.iter().any(|want| name == *want)
+        }
         // Windows always answers; elsewhere there is no cheap image lookup we can
         // rely on across glibc and macOS, and the port is ours by contract.
         None => !cfg!(windows),
     };
     if !ours {
-        eprintln!("port {port} is held by pid {pid}, which is not {expected}; leaving it alone");
+        eprintln!(
+            "port {port} is held by pid {pid}, which is not {}; leaving it alone",
+            expected.join(" or ")
+        );
         return;
     }
-    eprintln!("reclaiming port {port} from a stale {expected} ({pid})");
+    eprintln!("reclaiming port {port} from a stale {} ({pid})", expected.join("/"));
     kill_tree(pid);
     std::thread::sleep(Duration::from_millis(300));
 }
@@ -853,7 +968,49 @@ fn kill_tree(pid: u32) {
 
 #[cfg(not(windows))]
 fn kill_tree(pid: u32) {
+    // A bare `kill -9` is not a tree: `node dist/main.js` forks the API and the
+    // worker, and Immich renames that fork to `immich-api`, so once the parent is
+    // gone nothing on the machine links the survivor to us — not its name, not its
+    // command line, not a pid file. Collect the descendants first, then kill.
+    for child in descendants(pid) {
+        let _ = Command::new("kill")
+            .args(["-9", &child.to_string()])
+            .status();
+    }
     let _ = Command::new("kill").args(["-9", &pid.to_string()]).status();
+}
+
+/// Every process below `pid`, parents before children.
+#[cfg(not(windows))]
+fn descendants(pid: u32) -> Vec<u32> {
+    let Ok(output) = Command::new("ps").args(["-Ao", "pid=,ppid="]).output() else {
+        return Vec::new();
+    };
+    let text = String::from_utf8_lossy(&output.stdout);
+    let mut pairs: Vec<(u32, u32)> = Vec::new();
+    for line in text.lines() {
+        let mut fields = line.split_whitespace();
+        if let (Some(child), Some(parent)) = (fields.next(), fields.next()) {
+            if let (Ok(child), Ok(parent)) = (child.parse::<u32>(), parent.parse::<u32>()) {
+                pairs.push((child, parent));
+            }
+        }
+    }
+
+    let me = std::process::id();
+    let mut found = Vec::new();
+    let mut stack = vec![pid];
+    while let Some(parent) = stack.pop() {
+        for (child, guardian) in &pairs {
+            // Never walk into this process: if a pid was recycled to point at the
+            // app, its "descendants" are the app itself.
+            if *guardian == parent && *child != me && !found.contains(child) {
+                found.push(*child);
+                stack.push(*child);
+            }
+        }
+    }
+    found
 }
 
 /// Only used to make sure a recorded pid still belongs to the process we started.
@@ -872,8 +1029,30 @@ fn process_name(pid: u32) -> Option<String> {
 }
 
 #[cfg(not(windows))]
-fn process_name(_pid: u32) -> Option<String> {
-    None
+fn process_name(pid: u32) -> Option<String> {
+    // `comm` is the executable path on macOS and the program name on Linux, and
+    // it is read from the kernel rather than from argv — which matters here,
+    // because Immich rewrites its own argv[0] to `immich-api` and would otherwise
+    // look nothing like the `node` that was started.
+    let output = Command::new("ps")
+        .args(["-p", &pid.to_string(), "-o", "comm="])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let text = String::from_utf8_lossy(&output.stdout);
+    let path = text.trim();
+    if path.is_empty() {
+        return None;
+    }
+    let name = path.rsplit('/').next().unwrap_or(path);
+    // `<defunct>` is a killed process nobody has waited on yet: it holds a pid and
+    // nothing else. Treating it as alive would make a successful kill look failed.
+    if name == "<defunct>" {
+        return None;
+    }
+    Some(name.to_ascii_lowercase())
 }
 
 #[cfg(windows)]
@@ -885,3 +1064,182 @@ fn no_console(command: &mut Command) {
 
 #[cfg(not(windows))]
 fn no_console(_command: &mut Command) {}
+
+#[cfg(all(test, not(windows)))]
+mod tests {
+    use super::*;
+
+    /// A child that sits still until it is killed, built rather than copied.
+    ///
+    /// macOS kills a copy of a platform binary such as `/bin/sleep` the moment it is
+    /// exec'd from another path, so a copy dies on its own and the test races the
+    /// kernel instead of testing the supervisor. `cc` arrives with the Xcode command
+    /// line tools the project already requires; without it there is no stand-in.
+    fn idle_process(dir: &Path, name: &str) -> Option<PathBuf> {
+        let source = dir.join("idle.c");
+        std::fs::write(
+            &source,
+            "#include <unistd.h>\nint main(void) { for (;;) { pause(); } }\n",
+        )
+        .ok()?;
+        let binary = dir.join(name);
+        let built = Command::new("cc")
+            .arg("-o")
+            .arg(&binary)
+            .arg(&source)
+            .output()
+            .map(|output| output.status.success())
+            .unwrap_or(false);
+        if !built {
+            eprintln!("no cc available to build a stand-in child; skipping");
+            return None;
+        }
+        Some(binary)
+    }
+
+    /// Bounded, so a missed kill fails the test instead of parking it.
+    fn died(child: &mut Child) -> bool {
+        for _ in 0..30 {
+            if child.try_wait().unwrap().is_some() {
+                return true;
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        false
+    }
+
+    fn scratch(tag: &str) -> PathBuf {
+        let tmp = std::env::temp_dir().join(format!("immich-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(tmp.join("runtime").join("pg").join("bin")).unwrap();
+        tmp
+    }
+
+    /// The stub this replaced always answered `None`, so not one recorded pid could
+    /// match and every orphan survived a relaunch.
+    #[test]
+    fn process_name_reads_the_executable_of_a_live_process() {
+        let name = process_name(std::process::id()).expect("the test process has a name");
+        assert!(!name.is_empty(), "a live pid answers with a name, not nothing");
+        assert_ne!(name, "<defunct>");
+    }
+
+    /// The recorded pid has to be believed and acted on, and the record has to
+    /// outlive a failed kill: deleting it while the process still runs is what left
+    /// a server answering with no database and no file to find it by.
+    #[test]
+    fn reap_stops_a_recorded_child_and_forgets_it_only_once_it_is_gone() {
+        let tmp = scratch("reap");
+        let Some(fake) = idle_process(&tmp.join("runtime").join("pg").join("bin"), "postgres")
+        else {
+            return;
+        };
+
+        let settings = Settings {
+            runtime_root: tmp.join("runtime").to_string_lossy().into_owned(),
+            ..Settings::default()
+        };
+        let layout = Layout::new(&tmp.join("library"));
+        std::fs::create_dir_all(&layout.logs).unwrap();
+
+        let mut child = Command::new(&fake).spawn().unwrap();
+        std::fs::write(layout.pid_file("database"), child.id().to_string()).unwrap();
+        std::thread::sleep(Duration::from_millis(250));
+
+        Runtime::reap(&layout, &settings);
+
+        let killed = died(&mut child);
+        let record_gone = !layout.pid_file("database").exists();
+        let _ = child.kill();
+        let _ = child.wait();
+        let _ = std::fs::remove_dir_all(&tmp);
+
+        assert!(killed, "the recorded pid should have been killed");
+        assert!(record_gone, "a killed child's pid file should be removed");
+    }
+
+    /// `node dist/main.js` forks the API and the worker, and Immich renames that
+    /// fork to `immich-api`, so nothing about it looks like `node` afterwards: a
+    /// bare `kill -9` on the parent leaves a second listener on the server port.
+    #[test]
+    fn kill_tree_takes_the_forks_with_it() {
+        let mut parent = Command::new("/bin/sh")
+            .arg("-c")
+            .arg("sleep 120 & wait")
+            .spawn()
+            .unwrap();
+        std::thread::sleep(Duration::from_millis(300));
+
+        let forks = descendants(parent.id());
+        assert!(!forks.is_empty(), "the shell should have forked one child");
+
+        kill_tree(parent.id());
+
+        let mut gone = false;
+        for _ in 0..30 {
+            gone = forks.iter().all(|pid| process_name(*pid).is_none());
+            if gone {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        let _ = parent.kill();
+        let _ = parent.wait();
+
+        assert!(gone, "the forked child outlived the parent");
+    }
+
+    /// The sweep is the only path that can find a child whose pid file is gone, so
+    /// it has to be precise: kill what runs out of this runtime, and nothing else.
+    #[test]
+    fn sweep_kills_what_runs_out_of_the_runtime_and_leaves_the_rest() {
+        let tmp = scratch("sweep");
+        let Some(fake) = idle_process(&tmp.join("runtime").join("pg").join("bin"), "postgres")
+        else {
+            return;
+        };
+
+        let settings = Settings {
+            runtime_root: tmp.join("runtime").to_string_lossy().into_owned(),
+            ..Settings::default()
+        };
+        let layout = Layout::new(&tmp.join("library"));
+        std::fs::create_dir_all(&layout.root).unwrap();
+
+        let mut ours = Command::new(&fake).spawn().unwrap();
+        let mut theirs = Command::new("/bin/sleep").arg("120").spawn().unwrap();
+        // Names a file in the runtime without running out of it: what a user's
+        // `tail -f` or an ffmpeg pass over the library looks like.
+        let mut onlooker = Command::new("/usr/bin/tail")
+            .arg("-f")
+            .arg(&fake)
+            .spawn()
+            .unwrap();
+        std::thread::sleep(Duration::from_millis(250));
+        assert_eq!(process_name(ours.id()).as_deref(), Some("postgres"));
+
+        sweep_orphans(&settings, &layout);
+
+        let killed = died(&mut ours);
+        let unrelated_survived = process_name(theirs.id()).is_some();
+        let onlooker_survived = process_name(onlooker.id()).is_some();
+
+        let _ = ours.kill();
+        let _ = theirs.kill();
+        let _ = onlooker.kill();
+        let _ = ours.wait();
+        let _ = theirs.wait();
+        let _ = onlooker.wait();
+        let _ = std::fs::remove_dir_all(&tmp);
+
+        assert!(killed, "a process running out of the runtime should be killed");
+        assert!(
+            unrelated_survived,
+            "a process that does not live in the runtime must not be killed"
+        );
+        assert!(
+            onlooker_survived,
+            "naming a file in the runtime is not the same as running out of it"
+        );
+    }
+}

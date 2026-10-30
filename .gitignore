@@ -12,9 +12,15 @@ src-tauri/gen
 # Generated, per platform, and several GB together. `runtime/` holds this
 # machine's binaries only: node, Postgres with pgvector, ffmpeg, the patched
 # Immich server, its web UI, the CLIP service and the Immich plugin. On macOS it
-# is produced by `scripts/prepare-runtime-macos.mjs`; on Windows it was assembled
-# by hand. Never copy one platform's `runtime/` to the other.
+# is produced by `scripts/prepare-runtime-macos.mjs`; on Windows by
+# `scripts/prepare-runtime-windows.mjs`. Never copy one platform's `runtime/` to
+# the other.
 runtime
+
+# Not an input to either assembler: the web UI is compiled from the pinned
+# checkout on every build. A `prebuilt/` tree left over from an older machine is
+# only ever a stale copy of `runtime/www` that a build would no longer read.
+prebuilt
 ml/models
 
 # macOS assembler: the patched Immich checkout and the downloads it caches

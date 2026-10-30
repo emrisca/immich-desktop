@@ -82,7 +82,7 @@ const option = (name, fallback) => {
 const KNOWN = new Set([
   "dry-run", "skip-server", "skip-web", "skip-plugin", "skip-ml", "skip-models",
   "arch", "immich-ref", "node-major", "node-version", "pg-zip", "pgvector-version",
-  "ffmpeg-zip", "runtime", "www-source",
+  "ffmpeg-zip", "runtime",
 ]);
 for (const arg of argv) {
   if (!arg.startsWith("--")) {
@@ -743,20 +743,12 @@ function fetchCorePlugin() {
 // ── web ui ───────────────────────────────────────────────────────────────────
 function fetchWeb() {
   say("Immich web UI");
-  const prebuilt = option("www-source", path.join(root, "prebuilt", "www"));
+  // Built from `web/` in the pinned checkout, on every run: no `prebuilt/www` and
+  // no reuse of an existing `runtime/www`. Both used to copy whatever was on disk
+  // and log a line that read like a build, which is how a stale interface ships.
   const target = path.join(runtime, "www");
-  if (existsSync(path.join(prebuilt, "index.html"))) {
-    fresh(target);
-    cpRecursive(prebuilt, target);
-    note(`copied prebuilt/www → runtime/www (${path.relative(root, prebuilt)})`);
-    return;
-  }
   if (dryRun) {
-    note(`would run pnpm --filter web build in .win-build/immich and copy web/build → runtime/www`);
-    return;
-  }
-  if (existsSync(path.join(target, "index.html"))) {
-    note("runtime/www already holds a build — reusing it");
+    note(`would run pnpm --config.verify-deps-before-run=false --filter immich-web build in .win-build/immich and copy web/build → runtime/www`);
     return;
   }
   if (!existsSync(path.join(work, "web"))) {
