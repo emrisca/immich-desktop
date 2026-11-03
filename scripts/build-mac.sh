@@ -82,9 +82,20 @@ if [ -d "$app" ]; then
 
   # The dmg Tauri built holds the app from before the repair, so replace it with
   # one made from this app, keeping the drag-to-Applications layout.
+  # Name the image after the version being built, and clear anything an earlier
+  # version left in the folder. Taking the first *.dmg the way this used to
+  # returned the previous build's file, so a new version was packaged, verified
+  # and copied out under the old version's name.
   shopt -s nullglob
-  existing=("$bundle"/dmg/*.dmg)
-  dmg="${existing[0]:-$bundle/dmg/Immich Desktop_$(uname -m).dmg}"
+  version=$(node -p "require('./package.json').version")
+  # Tauri writes `aarch64`, uname writes `arm64`; an asset named the second way
+  # sits beside the first on a release page and reads as a different build.
+  case "$(uname -m)" in
+    arm64) arch=aarch64 ;;
+    *) arch=$(uname -m) ;;
+  esac
+  for stale in "$bundle"/dmg/*.dmg; do rm -f "$stale"; done
+  dmg="$bundle/dmg/Immich Desktop_${version}_${arch}.dmg"
   staging=$(mktemp -d)
   ditto "$app" "$staging/Immich Desktop.app"
   ln -s /Applications "$staging/Applications"
@@ -93,6 +104,31 @@ if [ -d "$app" ]; then
   mkdir -p "$(dirname "$dmg")"
   hdiutil create -quiet -volname "Immich Desktop" -srcfolder "$staging" -ov -format UDZO "$dmg"
   rm -rf "$staging"
+
+  # A dmg is what people download, so it is what gets checked. An image that
+  # will not verify, or an app inside it whose signature no longer matches,
+  # reaches the user as "damaged and can't be opened" — the same message a
+  # truncated download gives — and neither is visible from this machine.
+  echo "▸ verify the dmg"
+  hdiutil verify "$dmg" >/dev/null 2>&1 || {
+    echo "✗ the dmg does not verify; do not publish it." >&2
+    exit 1
+  }
+  mountpoint=$(mktemp -d)
+  hdiutil attach -nobrowse -readonly -mountpoint "$mountpoint" "$dmg" >/dev/null 2>&1 || {
+    echo "✗ the dmg will not mount; do not publish it." >&2
+    exit 1
+  }
+  codesign --verify --deep --strict "$mountpoint/Immich Desktop.app" || {
+    hdiutil detach "$mountpoint" >/dev/null 2>&1 || true
+    echo "✗ the app inside the dmg does not verify; it will report as damaged." >&2
+    exit 1
+  }
+  hdiutil detach "$mountpoint" >/dev/null 2>&1 || true
+  rmdir "$mountpoint" 2>/dev/null || true
+  sha256=$(shasum -a 256 "$dmg" | cut -d' ' -f1)
+  echo "  sha256 $sha256"
+  echo "  put that digest in the release notes so a download can be checked"
 fi
 
 if [ -d "$app" ]; then

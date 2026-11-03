@@ -111,6 +111,21 @@ macOS needs the same toolchain, plus `RUSTUP_TOOLCHAIN=stable`, because that pin
 target that cannot exist on a Mac. `scripts/build-mac.sh` exports it, assembles the runtime and
 leaves the app and a dmg in `~/Downloads`.
 
+### Opening the macOS build
+
+The app is ad-hoc signed, not notarised, so anything that came through a browser carries
+`com.apple.quarantine` and Gatekeeper stops it on first launch. Right-click → *Open* clears that
+for good.
+
+If macOS instead says the image or the app **is damaged**, the bytes are not the ones that were
+signed. Compare the download with the sha256 `scripts/build-mac.sh` prints: if they differ the
+download is short (the dmg is about 574 MB, so fetch it with a resumable client rather than a
+browser tab), and if they match, strip the flag by hand:
+
+```sh
+xattr -dr com.apple.quarantine "/Applications/Immich Desktop.app"
+```
+
 ```sh
 bash scripts/build-mac.sh            # --skip-ml leaves out the CLIP service
 ```

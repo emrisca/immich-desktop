@@ -1,5 +1,18 @@
 # Release notes
 
+## 0.1.2 — A macOS image that is checked before it ships
+
+The 0.1.1 dmg arrived as "damaged and can't be opened". Nothing had checked an image before it was
+attached to a release, so a disk image that would not mount, or an app inside it whose ad-hoc
+signature no longer matched its contents, was first discovered by whoever downloaded it. The macOS
+release job now builds through `scripts/ci-tauri.mjs`, which mounts the image it just produced,
+verifies the app inside it against its designated requirement, prints the digest, and fails the job
+— before anything is attached — if any of that does not hold.
+
+`scripts/build-mac.sh` makes that check for a local build too, where the image was also named from
+the first `*.dmg` already in the bundle folder: a version bump packaged the new app and then handed
+it out under the previous version's filename. It is named from `package.json` now.
+
 ## 0.1.1 — One window on both platforms, and a release pipeline
 
 The Windows build used to load its own stylesheet: the glass look, a violet aurora behind blurred

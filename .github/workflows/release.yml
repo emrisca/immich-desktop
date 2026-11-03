@@ -71,6 +71,9 @@ jobs:
           releaseDraft: false
           prerelease: false
           includeUpdaterJson: true
+          # Builds, then mounts the dmg it just made and checks the app inside
+          # it, refusing to publish an image that would arrive as damaged.
+          tauriScript: node scripts/ci-tauri.mjs
 
   windows:
     needs: macos
