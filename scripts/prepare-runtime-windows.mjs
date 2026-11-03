@@ -200,15 +200,37 @@ async function download(url, destination) {
     return;
   }
   mkdirSync(path.dirname(destination), { recursive: true });
-  note(`downloading ${url}`);
-  const response = await fetch(url, { redirect: "follow" });
-  if (!response.ok || !response.body) {
-    die(`download failed (${response.status}) for ${url}`);
-  }
+
+  // Retried for the same reason as the macOS script: these are GitHub release
+  // assets behind a redirect, and a dropped connection partway through is worth
+  // another attempt rather than another whole run. A 4xx is not retried.
   const partial = `${destination}.part`;
-  await pipeline(Readable.fromWeb(response.body), createWriteStream(partial));
-  renameSync(partial, destination);
-  note(`${(statSync(destination).size / 1e6).toFixed(1)} MB`);
+  const attempts = 4;
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    note(
+      attempt === 1
+        ? `downloading ${url}`
+        : `retrying ${url} (attempt ${attempt} of ${attempts})`,
+    );
+    try {
+      const response = await fetch(url, { redirect: "follow" });
+      if (!response.ok || !response.body) {
+        const error = new Error(`download failed (${response.status}) for ${url}`);
+        Object.assign(error, { fatal: response.status < 500 });
+        throw error;
+      }
+      await pipeline(Readable.fromWeb(response.body), createWriteStream(partial));
+      renameSync(partial, destination);
+      note(`${(statSync(destination).size / 1e6).toFixed(1)} MB`);
+      return;
+    } catch (error) {
+      rmSync(partial, { force: true });
+      if (error.fatal || attempt === attempts) {
+        die(`${error.message} (attempt ${attempt} of ${attempts})`);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 2000 * attempt));
+    }
+  }
 }
 
 /// Windows' bsdtar, by absolute path. Git Bash's GNU tar is first on PATH and

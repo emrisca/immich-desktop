@@ -127,12 +127,41 @@ async function download(url, destination) {
     return;
   }
   mkdirSync(path.dirname(destination), { recursive: true });
-  note(`downloading ${url}`);
-  const response = await fetch(url, { redirect: "follow" });
-  if (!response.ok || !response.body) {
-    die(`download failed (${response.status}) for ${url}`);
+
+  // A dropped connection must not throw away a twenty-minute build. GitHub
+  // serves release assets through a redirect to another host, and that is where
+  // an `EPIPE` comes from — the first CI run died on exactly that, on the
+  // extism PDK, long after Postgres and the server had been assembled.
+  //
+  // Only the transport is retried: a 4xx is an answer, not an accident. A failed
+  // attempt removes what it wrote, so the "cached" check above can never adopt a
+  // truncated file as a finished download.
+  const attempts = 4;
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    note(
+      attempt === 1
+        ? `downloading ${url}`
+        : `retrying ${url} (attempt ${attempt} of ${attempts})`,
+    );
+    try {
+      const response = await fetch(url, { redirect: "follow" });
+      if (!response.ok || !response.body) {
+        const error = new Error(`download failed (${response.status}) for ${url}`);
+        // Marked so the catch below stops instead of retrying a real refusal.
+        Object.assign(error, { fatal: response.status < 500 });
+        throw error;
+      }
+      await pipeline(Readable.fromWeb(response.body), createWriteStream(destination));
+      return;
+    } catch (error) {
+      rmSync(destination, { force: true });
+      if (error.fatal || attempt === attempts) {
+        die(`${error.message} (attempt ${attempt} of ${attempts})`);
+      }
+      // Linear backoff: a second try immediately would meet the same bad socket.
+      await new Promise((resolve) => setTimeout(resolve, 2000 * attempt));
+    }
   }
-  await pipeline(Readable.fromWeb(response.body), createWriteStream(destination));
 }
 
 function fresh(dir) {
