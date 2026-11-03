@@ -4,27 +4,28 @@ import { fileURLToPath, URL } from "node:url";
 
 const path = (relative: string) => fileURLToPath(new URL(relative, import.meta.url));
 
-// The hub is drawn twice, and the two drawings cannot share a sheet: every class
-// name means the same thing in both, so whichever loaded first would be restyled
-// by the other. `src/styles/index.css` is the Mac's AppKit shell; `windows/app.css`
-// is the look the Windows build has shipped since before it.
+// The hub is drawn once. `src/styles/index.css` is the Mac's AppKit shell, and
+// every build wears it: the second sheet that used to sit beside it —
+// `windows/app.css`, the glass look of violet aurora and blurred panes — has
+// been removed, so a Windows install and a Mac install are the same window.
 //
-// Chosen from the platform that runs the build, because each one builds on its
-// own machine — `scripts/build-mac.sh` on a Mac, `scripts/build-windows.ps1` on
-// Windows — so a bundle can never carry the other platform's look.
-const macLook = process.platform === "darwin";
+// The flag below stays even though it can no longer be false. The pieces that
+// came with the Mac look (the appearance picker, the frame colour the shell
+// paints, the circle window controls) read it, and one constant is easier to
+// trust than three copies of `true`.
+const macLook = true;
 
 // The Tauri shell points its `devUrl` at this exact port, so it is pinned.
 export default defineConfig({
   plugins: [react()],
-  // Read in `src/app/platform.ts` as `isMac`, so the Mac-only pieces and the
+  // Read in `src/app/platform.ts` as `isMac`, so the look's own pieces and the
   // stylesheet below are decided by the same value.
   define: { __MAC_LOOK__: JSON.stringify(macLook) },
   resolve: {
     alias: {
       // Before `@`, so the prefix is not swallowed by it. One import site:
       // `src/main.tsx`.
-      "@look": path(macLook ? "./src/styles/index.css" : "./src/styles/windows/app.css"),
+      "@look": path("./src/styles/index.css"),
       "@": path("./src"),
     },
   },

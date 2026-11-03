@@ -1,11 +1,12 @@
 /**
- * Whether this build is the Mac one.
+ * Whether this build wears the Mac look.
  *
- * The hub is drawn twice — the Mac's AppKit shell and the Windows look — and the
- * build loads exactly one stylesheet, chosen in `vite.config.ts` from the
- * platform that ran the build. This reads the same choice rather than sniffing
- * the browser, so the pieces that belong to the Mac look alone — the frame colour
- * the shell paints, the appearance picker, the circle window controls — can never
- * disagree with the sheet that is actually loaded.
+ * There is one look now, on both platforms: the Mac's AppKit shell, from
+ * `src/styles/index.css`. The Windows sheet that shipped beside it — the glass
+ * look, all blurred panes and violet aurora — is gone, so the answer is `true`
+ * everywhere. The flag stays because the pieces that arrived with that look — the
+ * frame colour the shell paints, the appearance picker, the circle window
+ * controls — read it, and a bundle must never draw them without the sheet that
+ * gives them their surfaces.
  */
 export const isMac = __MAC_LOOK__;

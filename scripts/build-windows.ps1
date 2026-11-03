@@ -26,6 +26,13 @@ param(
 $ErrorActionPreference = 'Stop'
 $LASTEXITCODE = 0
 
+# `bundle.createUpdaterArtifacts` signs the app as it is built, so a build needs
+# the private key even on a machine that is only checking its own work. Locally
+# it is the gitignored one; CI passes the same key from a repository secret.
+if (-not $env:TAURI_SIGNING_PRIVATE_KEY) {
+  $env:TAURI_SIGNING_PRIVATE_KEY = Join-Path (Split-Path -Parent $PSScriptRoot) '.secrets/tauri-signing.key'
+}
+
 # The runtime the app starts, as the supervisor sees it (src-tauri/src/runtime.rs).
 # A path here is a promise the bundle carries it, so a build that drops one fails
 # below instead of at first launch on someone else's machine.

@@ -171,7 +171,7 @@
 
 /* Two classes: the dock keeps its own padding and surface even though `.panel`
    comes later. It is an edge of the window: flush to the left, full height,
-   and climbing under the titlebar so the traffic lights sit on its vibrancy. */
+   and climbing under the titlebar so the traffic lights sit on its surface. */
 .panel.sidebar {
   display: flex;
   min-height: 0;
@@ -318,8 +318,8 @@
   overscroll-behavior: contain;
 }
 
-/* The bar stays when the hero scrolls under it: the same blur, one line,
-   so the window never loses the name of where you are. */
+/* The bar stays when the hero scrolls under it: the same solid surface as the
+   window, one line, so the window never loses the name of where you are. */
 .topbar {
   position: sticky;
   top: 0;
@@ -331,8 +331,6 @@
   padding: 0 18px;
   border-bottom: 1px solid var(--line-soft);
   background: var(--topbar-bg);
-  -webkit-backdrop-filter: var(--panel-blur);
-  backdrop-filter: var(--panel-blur);
 }
 
 .topbar__title {

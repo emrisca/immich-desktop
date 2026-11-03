@@ -387,3 +387,27 @@ the same class names, loading both would leave Windows restyled by whichever cam
 cost is that the components have moved on — the Settings page, the sidebar foot link, `Panel`
 without its stagger props — so a few Windows-only rules are still owed, and only a Windows machine
 can see them.
+
+## One window on both platforms, 3 November 2026
+
+The Windows sheet is gone. `src/styles/windows/` — the glass look of the earlier work, a violet
+aurora behind blurred panes with a white sheen on every card — has been deleted, and every build
+now loads `src/styles/index.css`. The Mac composition is the one that was kept: it is the same
+window at the same size, its controls are the desktop sizes rather than the iOS ones, and it
+already ships two appearances where the glass sheet shipped one.
+
+What that moved:
+
+- `vite.config.ts` has one `@look` alias and `macLook` pinned to `true`, so `__MAC_LOOK__` answers
+  the same on both platforms. Its readers — the appearance picker and its sidebar entry, the
+  circle window controls, the frame colour the shell paints — therefore apply on Windows too.
+- No glass survives. `backdrop-filter` appears nowhere in the stylesheets, the toolbar content
+  scrolls under and the sidebar beside it are solid (`#f6f6f6` in Light, `#2c2c2e` and `#262628`
+  in Dark), and the `--panel-blur` token went with the last of them. A window drawn with nothing
+  behind the webview had nothing to blur anyway.
+- `apply_style_chrome` in `lib.rs` paints the frame and the native theme on every platform instead
+  of compiling to a no-op off macOS, and `tauri.conf.json` opens the window on `#1e1e1e` rather
+  than the glass look's `#080711`.
+
+The 30 October section above stays as the record of what was true then; the split it describes is
+the thing this replaces.

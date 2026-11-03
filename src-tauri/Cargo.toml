@@ -1,6 +1,6 @@
 [package]
 name = "immich-desktop"
-version = "0.1.0"
+version = "0.1.1"
 description = "A Tauri shell that runs a local Immich server without Docker"
 license = "AGPL-3.0-only"
 edition = "2021"
@@ -23,6 +23,7 @@ tauri-plugin-dialog = "2.7.3"
 # Windows-only dependency: it used to sit in the target section below, where only
 # the Windows build ever linked it, and the macOS build failed on it.
 qrcode = { version = "0.14", default-features = false }
+tauri-plugin-updater = "2"
 
 # Elevating the firewall rule. ShellExecuteW rather than a PowerShell one-liner:
 # an unsigned app spawning `powershell -EncodedCommand` at startup is the shape

@@ -1,0 +1,118 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# The same loop northstar-desktop uses: a tag whose version equals
+# `src-tauri/tauri.conf.json` builds that platform's installers, signs the
+# updater artifact with the repository's minisign key, and attaches everything to
+# a published release. macOS runs first and Windows waits for it, because
+# tauri-action writes `latest.json` from the release it finds and the Windows run
+# adds its platform's entry to the same file.
+#
+# Each job assembles `runtime/` itself. It is 1.4 GB of Node, Postgres, FFmpeg,
+# the patched Immich server and the CLIP service, built per platform by
+# `scripts/prepare-runtime-*`, and the bundler copies it into the app — so an
+# installer built without that step would install and then start nothing.
+#
+# Linux is absent on purpose: there is no Linux runtime assembler, so there is
+# nothing to bundle.
+jobs:
+  macos:
+    runs-on: macos-latest
+
+    # `src-tauri/rust-toolchain.toml` pins the Windows MSVC triple, which cannot
+    # exist here. The variable wins over that file, as `scripts/build-mac.sh` does.
+    env:
+      RUSTUP_TOOLCHAIN: stable
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      # The assembler builds the Immich server and its web UI from the pinned
+      # checkout, and that build is driven by pnpm.
+      - run: npm install -g pnpm@11
+
+      - run: npm ci
+
+      - run: npm run typecheck
+
+      - name: Assemble the macOS runtime
+        run: node scripts/prepare-runtime-macos.mjs
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: v__VERSION__
+          releaseName: Immich Desktop v__VERSION__
+          releaseBody: |
+            Download the installer below.
+
+            macOS: the app is ad-hoc signed, not notarised, so the first launch needs
+            right-click > Open. Windows: the installer is not code-signed, so SmartScreen
+            needs More info > Run anyway, and the firewall prompt has to be allowed on
+            private networks or phones cannot reach the library.
+          releaseDraft: false
+          prerelease: false
+          includeUpdaterJson: true
+
+  windows:
+    needs: macos
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - run: npm install -g pnpm@11
+
+      - run: npm ci
+
+      - run: npm run typecheck
+
+      # Needs the C++ workload the runner image already carries: no Windows
+      # Postgres build ships pgvector, so the assembler compiles it with MSVC.
+      - name: Assemble the Windows runtime
+        run: node scripts/prepare-runtime-windows.mjs
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: v__VERSION__
+          releaseName: Immich Desktop v__VERSION__
+          releaseBody: |
+            Download the installer below.
+
+            macOS: the app is ad-hoc signed, not notarised, so the first launch needs
+            right-click > Open. Windows: the installer is not code-signed, so SmartScreen
+            needs More info > Run anyway, and the firewall prompt has to be allowed on
+            private networks or phones cannot reach the library.
+          releaseDraft: false
+          prerelease: false
+          includeUpdaterJson: true
+          updaterJsonPreferNsis: true

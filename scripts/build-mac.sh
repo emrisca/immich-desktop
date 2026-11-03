@@ -18,6 +18,12 @@ here=$(pwd)
 # exist on a Mac; RUSTUP_TOOLCHAIN takes precedence over that file.
 export RUSTUP_TOOLCHAIN="${RUSTUP_TOOLCHAIN:-stable}"
 
+# `bundle.createUpdaterArtifacts` signs the app as it is built, so a build needs
+# the private key. Locally it is the gitignored one; CI passes the same key from
+# a repository secret. Losing this key means no update can ever be installed,
+# because the app verifies against the public half in tauri.conf.json.
+export TAURI_SIGNING_PRIVATE_KEY="${TAURI_SIGNING_PRIVATE_KEY:-$here/.secrets/tauri-signing.key}"
+
 for tool in node npm git; do
   command -v "$tool" >/dev/null 2>&1 || {
     echo "✗ $tool is required and not on PATH." >&2

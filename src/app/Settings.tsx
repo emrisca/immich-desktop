@@ -1,6 +1,187 @@
+import { useCallback, useEffect, useState } from "react";
 import type { KeyboardEvent } from "react";
+import {
+  checkForUpdate,
+  inTauri,
+  installUpdate,
+  type UpdateCheck,
+} from "@/app/runtime";
 import { UI_STYLES, type StyleId } from "@/app/style";
+import { Button } from "@/ui/Button";
 import { Pill } from "@/ui/Pill";
+
+function messageOf(cause: unknown): string {
+  // A rejected command arrives as a string; a broken import arrives as an Error.
+  return cause instanceof Error ? cause.message : String(cause);
+}
+
+/**
+ * The update row.
+ *
+ * The release channel is this project's GitHub releases, and the endpoint and
+ * signing key live in `tauri.conf.json` — not here — so the page cannot be
+ * pointed at another manifest. Opening Settings is the check: the answer is what
+ * the section is for, and asking on demand too is one button. Nothing downloads
+ * until the user presses install, and an update never touches the library
+ * folder: it replaces the app beside it.
+ */
+function Updates() {
+  const [check, setCheck] = useState<UpdateCheck | null>(null);
+  const [busy, setBusy] = useState<"checking" | "installing" | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [percent, setPercent] = useState<number | null>(null);
+
+  const run = useCallback(async () => {
+    setBusy("checking");
+    setError(null);
+    try {
+      setCheck(await checkForUpdate());
+    } catch (cause) {
+      setError(messageOf(cause));
+    } finally {
+      setBusy(null);
+    }
+  }, []);
+
+  // Once per visit, and only inside the app: a browser preview has no shell to
+  // ask, and `inTauri` is false there.
+  useEffect(() => {
+    if (inTauri) {
+      void run();
+    }
+  }, [run]);
+
+  // Download progress, one event per percent (see `update_install`).
+  useEffect(() => {
+    if (!inTauri) {
+      return;
+    }
+    let stop: (() => void) | undefined;
+    let cancelled = false;
+    void import("@tauri-apps/api/event").then(({ listen }) =>
+      listen<{ received: number; total: number | null }>("update-progress", (event) => {
+        const { received, total } = event.payload;
+        setPercent(total ? Math.min(100, Math.round((received / total) * 100)) : null);
+      }).then((unlisten) => {
+        // The page can unmount while the import is still in flight.
+        if (cancelled) {
+          unlisten();
+        } else {
+          stop = unlisten;
+        }
+      }),
+    );
+    return () => {
+      cancelled = true;
+      stop?.();
+    };
+  }, []);
+
+  const install = useCallback(async () => {
+    setBusy("installing");
+    setError(null);
+    setPercent(null);
+    try {
+      await installUpdate();
+      // A successful install restarts the app, so this line is only reached when
+      // the new build was installed but the process was not replaced.
+      setError("The update was installed. Quit the app and open it again to use it.");
+    } catch (cause) {
+      setError(messageOf(cause));
+    } finally {
+      setBusy(null);
+      setPercent(null);
+    }
+  }, []);
+
+  const available = check?.available ?? null;
+  const state = !inTauri
+    ? "The app checks for updates; this preview cannot."
+    : busy === "installing"
+      ? percent === null
+        ? "Downloading and verifying the new build…"
+        : `Downloading and verifying the new build… ${percent}%`
+      : busy === "checking"
+        ? "Asking GitHub for the newest release…"
+        : available
+          ? `Version ${available.version} is ready to install.`
+          : check
+            ? "This is the newest build."
+            : "Not checked yet.";
+
+  return (
+    <section className="panel settings">
+      <p className="eyebrow">UPDATES</p>
+      <h2 className="display display--sm">Keep it current</h2>
+      <p className="lede">
+        Immich Desktop reads this project&rsquo;s releases on GitHub. The download is verified
+        against the key built into the app before it runs, and your library folder is never
+        touched.
+      </p>
+
+      <div className="update">
+        <dl className="update__facts">
+          <div>
+            <dt>This build</dt>
+            <dd>{check?.current ?? "—"}</dd>
+          </div>
+          <div>
+            <dt>Newest release</dt>
+            <dd>{available ? available.version : check ? "Same as this build" : "—"}</dd>
+          </div>
+        </dl>
+
+        <p className="update__state" aria-live="polite">
+          {state}
+        </p>
+
+        {percent !== null ? (
+          <div
+            className="update__bar"
+            role="progressbar"
+            aria-valuenow={percent}
+            aria-valuemin={0}
+            aria-valuemax={100}
+          >
+            <span className="update__fill" style={{ width: `${percent}%` }} />
+          </div>
+        ) : null}
+
+        {available?.notes ? (
+          <p className="update__notes">{available.notes}</p>
+        ) : null}
+
+        <div className="update__actions">
+          {available ? (
+            <Button
+              variant="primary"
+              onClick={() => void install()}
+              disabled={busy !== null}
+            >
+              {busy === "installing" ? "Installing…" : `Install ${available.version} and restart`}
+            </Button>
+          ) : (
+            <Button
+              variant="primary"
+              onClick={() => void run()}
+              disabled={busy !== null || !inTauri}
+            >
+              {busy === "checking" ? "Checking…" : "Check for updates"}
+            </Button>
+          )}
+          {available ? (
+            <Button variant="quiet" onClick={() => void run()} disabled={busy !== null}>
+              Check again
+            </Button>
+          ) : null}
+          {available ? <Pill tone="idle">{`${available.version} available`}</Pill> : null}
+        </div>
+
+        {error ? <p className="hint hint--flag">{error}</p> : null}
+      </div>
+    </section>
+  );
+}
 
 type Props = {
   style: StyleId;
@@ -94,6 +275,8 @@ export function Settings({ style, onSelect, error }: Props) {
 
         {error ? <p className="hint hint--flag">{error}</p> : null}
       </section>
+
+      <Updates />
     </div>
   );
 }

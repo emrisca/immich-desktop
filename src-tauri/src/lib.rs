@@ -17,7 +17,8 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use tauri::{Manager, RunEvent, State};
+use tauri::{Emitter, Manager, RunEvent, State};
+use tauri_plugin_updater::UpdaterExt;
 
 use layout::Layout;
 use runtime::{Runtime, StatusView};
@@ -565,9 +566,7 @@ const UI_STYLES: [&str; 2] = ["light", "dark"];
 /// Split out from `apply_style_chrome` so a test can check it: a style the hub
 /// knows and this match does not would land on the default's frame, sharing its
 /// colour and failing that test — which is the only thing that would notice.
-/// Only the Mac build paints the frame, so only it — and the tests that check
-/// every look has one — compile this.
-#[cfg(any(target_os = "macos", test))]
+/// One look is worn on both platforms now, so both paint the frame.
 fn chrome_for(style: &str) -> (u8, u8, u8, tauri::Theme) {
     match style {
         // NSWindow's own background in each appearance.
@@ -582,23 +581,18 @@ fn chrome_for(style: &str) -> (u8, u8, u8, tauri::Theme) {
 /// Paint the window to match the style behind the webview.
 ///
 /// The frame and the native chrome live outside CSS. Without this, a light page
-/// sits in a `#080711` window with dark scrollbars and dark dialogs, which reads
-/// as two apps rather than one. Called only when the style actually changes:
+/// sits in a dark window with dark scrollbars and dark dialogs, which reads as
+/// two apps rather than one. Called only when the style actually changes:
 /// re-applying a value the window already has makes macOS reset its frame, the
 /// trap the decorations switch already hit once.
 ///
-/// macOS only. The Windows build wears the one look it has always had, drawn by
-/// `src/styles/windows/app.css`, so there is no second frame to paint — and
-/// reaching in to set one would restyle a window that is not ours to restyle.
+/// Every platform. The hub wears the Mac look on Windows too since the glass
+/// sheet was removed, so a Windows window gets the same painted frame, and its
+/// title-bar area no longer shows the `#080711` the glass look opened on.
 fn apply_style_chrome(window: &tauri::WebviewWindow, style: &str) {
-    #[cfg(target_os = "macos")]
-    {
-        let (red, green, blue, theme) = chrome_for(style);
-        let _ = window.set_background_color(Some(tauri::window::Color(red, green, blue, 0xff)));
-        let _ = window.set_theme(Some(theme));
-    }
-    #[cfg(not(target_os = "macos"))]
-    let _ = (window, style);
+    let (red, green, blue, theme) = chrome_for(style);
+    let _ = window.set_background_color(Some(tauri::window::Color(red, green, blue, 0xff)));
+    let _ = window.set_theme(Some(theme));
 }
 
 /// The look the hub wears. Applies immediately in the page; this makes it
@@ -635,6 +629,107 @@ fn set_ui_style(
     Ok(snapshot(&state, None))
 }
 
+/// A release the updater found on the channel.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Release {
+    version: String,
+    /// The release body, which is where the notes are.
+    notes: Option<String>,
+    date: Option<String>,
+}
+
+/// What the release channel answered. `available` is null for the ordinary
+/// answer: this build is the newest one there is.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdateCheck {
+    current: String,
+    available: Option<Release>,
+}
+
+/// Download progress, emitted as `update-progress` while an update installs.
+/// A release carries a whole runtime, so the download is hundreds of megabytes
+/// and a spinner with no size would read as hung.
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdateProgress {
+    received: u64,
+    total: Option<u64>,
+}
+
+/// Ask the release channel for a newer build.
+///
+/// The endpoint and the public key are compiled in (`plugins.updater` in
+/// tauri.conf.json), so the page cannot point this at another manifest. `check`
+/// is a read: nothing installs until `update_install` is called.
+#[tauri::command]
+async fn update_check(app: tauri::AppHandle) -> Result<UpdateCheck, String> {
+    let current = app.package_info().version.to_string();
+    let update = app
+        .updater()
+        .map_err(|error| format!("The updater is not configured in this build: {error}"))?
+        .check()
+        .await
+        .map_err(|error| format!("Could not reach the release channel: {error}"))?;
+
+    Ok(UpdateCheck {
+        current,
+        available: update.map(|update| Release {
+            version: update.version,
+            notes: update.body,
+            date: update.date.map(|date| date.to_string()),
+        }),
+    })
+}
+
+/// Download, verify and install the newest build, then restart into it.
+///
+/// The installer is checked against the public key bundled in the app before
+/// anything runs, so a tampered or truncated download fails here and leaves the
+/// installed build alone. A successful install ends in `restart`, which replaces
+/// this process; the command only returns when something went wrong.
+#[tauri::command]
+async fn update_install(app: tauri::AppHandle) -> Result<(), String> {
+    let update = app
+        .updater()
+        .map_err(|error| format!("The updater is not configured in this build: {error}"))?
+        .check()
+        .await
+        .map_err(|error| format!("Could not reach the release channel: {error}"))?;
+
+    let Some(update) = update else {
+        return Err("This build is already the newest one.".into());
+    };
+
+    let progress = app.clone();
+    let mut received = 0u64;
+    // One event per percent rather than per chunk: a chunk is tens of kilobytes
+    // and the installer is hundreds of megabytes, so per-chunk would flood the
+    // webview with twenty thousand events nobody can read.
+    let mut last_percent = u64::MAX;
+
+    update
+        .download_and_install(
+            move |chunk, total| {
+                received += chunk as u64;
+                if let Some(total) = total.filter(|total| *total > 0) {
+                    let percent = received.saturating_mul(100) / total;
+                    if percent == last_percent {
+                        return;
+                    }
+                    last_percent = percent;
+                }
+                let _ = progress.emit("update-progress", UpdateProgress { received, total });
+            },
+            || {},
+        )
+        .await
+        .map_err(|error| format!("The update could not be installed: {error}"))?;
+
+    app.restart()
+}
+
 /// Whether a runtime root really contains something to run.
 fn holds_runtime(root: &str) -> bool {
     let root = Path::new(root);
@@ -645,6 +740,9 @@ fn holds_runtime(root: &str) -> bool {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        // Reads `plugins.updater` from tauri.conf.json: the GitHub release
+        // endpoint and the minisign public key that verifies every installer.
+        .plugin(tauri_plugin_updater::Builder::new().build())
         // A second launch focuses the first window instead of starting a rival
         // supervisor over the same data directory.
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
@@ -817,7 +915,9 @@ pub fn run() {
             set_allow_phones,
             set_ui_style,
             allow_firewall,
-            phone_qr
+            phone_qr,
+            update_check,
+            update_install
         ])
         .build(tauri::generate_context!())
         .expect("error while building Immich Desktop")

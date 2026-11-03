@@ -4,7 +4,6 @@ import { FirstRun } from "@/app/FirstRun";
 import { openLibrary } from "@/app/runtime";
 import { Logs } from "@/app/Logs";
 import { Overview } from "@/app/Overview";
-import { isMac } from "@/app/platform";
 import { Settings } from "@/app/Settings";
 import { Sidebar } from "@/app/Sidebar";
 import { Storage } from "@/app/Storage";
@@ -124,9 +123,8 @@ export function App() {
             ) : null}
             {view === "backups" ? <Backups /> : null}
             {view === "logs" ? <Logs /> : null}
-            {/* The appearance picker is the Mac look's own control: the Windows
-                build loads one stylesheet and has nothing to switch. */}
-            {isMac && view === "settings" ? (
+            {/* One window on both platforms, so the picker is always here. */}
+            {view === "settings" ? (
               <Settings style={style} onSelect={setStyle} error={styleError} />
             ) : null}
           </main>

@@ -1,7 +1,7 @@
 {
   "name": "immich-desktop",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "description": "A Tauri shell that installs and runs a local Immich server, no Docker.",
   "license": "AGPL-3.0-only",

@@ -62,7 +62,7 @@ export function Sidebar({ view, onSelect, live }: Props) {
               Settings
             </button>
             <p className="footlink__meta">
-              <span>0.1.0</span>
+              <span>0.1.1</span>
               <span aria-hidden="true">·</span>
               <span>{live ? "live" : "preview data"}</span>
             </p>

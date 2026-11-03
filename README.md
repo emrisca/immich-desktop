@@ -63,6 +63,30 @@ non-zero.
 `-SkipRuntime` reuses `runtime/` for a rebuild, and `-NoLaunch` stops after the install checks on
 a machine where opening the app would disturb a library in use.
 
+### Publishing a release
+
+Both platforms publish from CI. Push an annotated `v<x.y.z>` tag whose version equals
+`src-tauri/tauri.conf.json`, and `.github/workflows/release.yml` assembles that platform's runtime,
+builds, signs the updater artifact and attaches it to a published, non-draft GitHub release —
+macOS first, then Windows, which adds its own entry to the same `latest.json`. Linux has no release
+job because there is no Linux runtime assembler.
+
+```sh
+npm version 0.1.2 --no-git-tag-version   # then Cargo.toml, Cargo.lock and tauri.conf.json
+git commit -am "Release 0.1.2"
+git tag -a v0.1.2 -m "Immich Desktop v0.1.2"
+git push origin main v0.1.2
+```
+
+Signing is the one piece that is set up outside the repository. `.secrets/tauri-signing.key` holds
+the private key (gitignored) and its public half is `plugins.updater.pubkey` in `tauri.conf.json`;
+the workflow reads the private key from the `TAURI_SIGNING_PRIVATE_KEY` repository secret and its
+password from `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` (empty for the key as generated). Both local
+build scripts point `TAURI_SIGNING_PRIVATE_KEY` at that file, because `createUpdaterArtifacts`
+signs during the build — a build without it fails rather than producing an app no update can be
+applied to. A tag and a config that disagree publish a release no install will ever offer: `tauri-
+action` interpolates `v__VERSION__` from the config.
+
 For the dev loop, without packaging anything:
 
 ```sh
@@ -133,11 +157,11 @@ docs/licensing.md       every component a build conveys, and its obligations
 docs/mission-appearance.md  the brief the appearance work was built from, and the numbers
 PLATFORMS.md            which file is Mac, which is Windows, which is neither
 PLAN.md                 design record, and the M0 evidence behind it
-src/styles/             the Mac look, one file per concern — base, shell, page, controls,
-                        pages/, responsive — with index.css stating the import order once
+src/styles/             the look, worn on both platforms, one file per concern — base, shell,
+                        page, controls, pages/, responsive — with index.css stating the
+                        import order once
 src/styles/styles/      its colours: system.css, one ladder of ten rungs walked from either
                         end — light and dark — and nothing that is not about a look
-src/styles/windows/     the Windows look: one sheet, one appearance, unchanged by any of this
 src/ui/                 button, field, panel, switch, pill, tabs
 src/app/                titlebar, sidebar, overview, storage, backups, logs, settings, phone card
 src-tauri/              the window and the supervisor: runtime, layout, import, watch, firewall, qr
@@ -163,17 +187,22 @@ appearance either way.
 
 | Look | What it is |
 | --- | --- |
-| **Light** | `#ECECEC` window, a flush translucent sidebar under the titlebar, content directly on the window, `rgba(60,60,67,.29)` hairlines doing the containing, 28px controls, San Francisco, one blue action. |
+| **Light** | `#ECECEC` window, a flush solid sidebar under the titlebar, content directly on the window, `rgba(60,60,67,.29)` hairlines doing the containing, 28px controls, San Francisco, one blue action. |
 | **Dark** | The same window at night: `#1e1e1e` window, `#409cff` accent. Not an inversion — see below for why its button is a darker blue than its text. |
 
-All of that is the Mac build. The Windows build is a separate sheet,
-`src/styles/windows/app.css` — the look it has shipped since before any of this work — and it has
-one appearance rather than two. `vite.config.ts` picks the sheet from the platform that runs the
-build, so a bundle carries only its own, and the pieces that belong to the Mac look alone (the
-appearance picker, the frame colour the shell paints, the circle window controls) sit behind the
-same flag, `isMac` in `src/app/platform.ts`. The two drawings cannot share a sheet: every class
-name means the same thing in both, so whichever loaded second would restyle the other. Keeping
-them apart is what stops a Mac restyle reaching a Windows window.
+There is no second look any more. The Windows build used to load its own sheet,
+`src/styles/windows/app.css` — the glass look, a violet aurora behind blurred panes — and that
+sheet has been deleted. Both platforms load `src/styles/index.css`, so a Windows window and a Mac
+window are the same window, and the appearance picker works on both. `vite.config.ts` keeps one
+`@look` alias and one flag, `isMac` in `src/app/platform.ts`, which is now true everywhere: the
+pieces that arrived with the Mac look (the appearance picker, the frame colour the shell paints,
+the circle window controls) read it, and nothing else has to know which platform it is on.
+
+The glass went with that sheet. Nothing in the app is blurred: the toolbar content scrolls under
+and the sidebar beside it are solid surfaces in both walks, and `backdrop-filter` appears nowhere.
+The window opens on `#1e1e1e` instead of the glass look's `#080711`, and `apply_style_chrome` now
+paints that frame on Windows as well, so the title-bar area and the native dialogs agree with
+the page.
 
 One file, `src/styles/styles/system.css`, answers to `<html data-style="…">` for both walks.
 Every colour, radius, duration and control size a component names is defined there, and each walk
@@ -190,8 +219,8 @@ choice — and the QR's white plate.
 
 With one look there is one composition, so it is written once, directly, where the components
 read it. `.shell` is a full-bleed grid: no gutter, no gap. `.panel.sidebar` is an edge of the
-window — it climbs under the titlebar by `--bar-h` so the traffic lights sit on its translucent
-wash, and a `separatorColor` rule on its right runs the full height. Every other `.panel` is a
+window — it climbs under the titlebar by `--bar-h` so the traffic lights sit on its own
+surface, and a `separatorColor` rule on its right runs the full height. Every other `.panel` is a
 row, not a card: 14px 0 16px, no fill, no ring, no shadow, no corners, with the page supplying
 the 20px inset. Sections are separated by one hairline (`border-top: 1px solid var(--line)`),
 which is how AppKit divides a grouped list. The hero and split are one column, because a 1024pt

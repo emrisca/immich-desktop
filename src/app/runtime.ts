@@ -79,6 +79,24 @@ export type WatchStatus = {
   lastError: string | null;
 };
 
+/** A release the updater found, as the shell read it off `latest.json`. */
+export type UpdateInfo = {
+  version: string;
+  /** The release body, which is where the notes are. */
+  notes: string | null;
+  /** The publication date, as the manifest spelled it. */
+  date: string | null;
+};
+
+/**
+ * What the release channel offers. `available` is null when this build is the
+ * newest one there is, which is the ordinary answer, not an error.
+ */
+export type UpdateCheck = {
+  current: string;
+  available: UpdateInfo | null;
+};
+
 export const inTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
 async function call<T>(command: string, args?: Record<string, unknown>): Promise<T> {
@@ -155,6 +173,25 @@ export function fetchLogs(source: string): Promise<LogView> {
 
 export function fetchUsage(): Promise<LibraryUsage> {
   return call<LibraryUsage>("library_usage");
+}
+
+/**
+ * Ask the release channel what the newest build is. The URL and the signing key
+ * live in `tauri.conf.json`, so the page cannot be pointed at another manifest.
+ * Everything here is a read: nothing downloads until `installUpdate`.
+ */
+export function checkForUpdate(): Promise<UpdateCheck> {
+  return call<UpdateCheck>("update_check");
+}
+
+/**
+ * Download, verify against the bundled public key, install and restart.
+ *
+ * A successful install ends in `restart`, so this promise normally never
+ * settles; a rejection means the build on disk was left alone.
+ */
+export function installUpdate(): Promise<void> {
+  return call<void>("update_install");
 }
 
 /** The address to paste into the phone app. */

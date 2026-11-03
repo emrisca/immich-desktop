@@ -118,3 +118,84 @@
 .hint--flag {
   color: var(--flag);
 }
+
+/* ══ settings: updates ═══════════════════════════════════════ */
+
+.update {
+  display: grid;
+  gap: 13px;
+  margin-top: 18px;
+}
+
+/* The two versions side by side: what is running, and what is offered. */
+.update__facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  margin: 0;
+}
+
+.update__facts div {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--fill-2);
+  box-shadow: inset 0 0 0 1px var(--line-control);
+}
+
+.update__facts dt {
+  font-family: var(--font-label);
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+/* Tabular figures: a version that changes width as it checks reads as unstable. */
+.update__facts dd {
+  margin: 0;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.update__state {
+  margin: 0;
+  font-size: 12px;
+  color: var(--ink-3);
+}
+
+.update__bar {
+  height: 5px;
+  border-radius: 999px;
+  background: var(--fill-3);
+  overflow: hidden;
+}
+
+.update__fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 200ms var(--ease);
+}
+
+/* Release bodies carry hard-wrapped lines, so the breaks are kept. */
+.update__notes {
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--fill-2);
+  box-shadow: inset 0 0 0 1px var(--line-soft);
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--ink-3);
+  white-space: pre-wrap;
+}
+
+.update__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}

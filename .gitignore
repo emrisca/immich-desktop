@@ -46,6 +46,11 @@ release
 # the throwaway contrast script. Re-created whenever it is needed.
 .style-work
 
+# The updater signing key. The private half signs every release and must never be
+# committed; the public half is `plugins.updater.pubkey` in tauri.conf.json. The
+# private key belongs in the repository's TAURI_SIGNING_PRIVATE_KEY secret.
+.secrets
+
 # Notes written for one machine and one reader. They stay on the machine that ran
 # the build and are never published.
 HANDOFF.md
