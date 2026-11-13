@@ -564,11 +564,12 @@ impl Runtime {
         // database is gone. Both names are ours.
         reclaim_port(settings.server_port, &["node", "immich-api"]);
 
-        // Immich serves its web app from `$IMMICH_BUILD_DATA/www`, and only when
-        // that folder exists; without it the server is API-only. The desktop app
-        // ships the built web UI beside the runtime for exactly this.
+        // Immich serves its web app from `$IMMICH_BUILD_DATA/www` and loads its
+        // workflow plugins from `$IMMICH_BUILD_DATA/plugins`; both live in the
+        // runtime. Point it at that root whenever there is one instead of only
+        // when `www` exists: an install without the web UI is API-only anyway,
+        // and gating on it also took the plugins away, which emptied Workflows.
         let build_data = Path::new(&settings.runtime_root).to_path_buf();
-        let has_web = build_data.join("www").join("index.html").is_file();
 
         let node = resolve_node(settings);
         let mut command = Command::new(node);
@@ -596,7 +597,7 @@ impl Runtime {
             .stderr(Stdio::from(layout.log_file("server")?));
         no_console(&mut command);
 
-        if has_web {
+        if !settings.runtime_root.is_empty() {
             command.env("IMMICH_BUILD_DATA", &build_data);
         }
 
@@ -733,18 +734,31 @@ fn ensure_database(settings: &Settings) -> io::Result<bool> {
         return Ok(true);
     }
 
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    // `createdb` can reach a cluster that has opened its port but not finished
+    // recovery, and answers "the database system is starting up". That is the
+    // same wait as the probe above, not a failed row: report it as not ready and
+    // let the next tick try again.
+    if still_warming_up(&stderr) {
+        return Ok(false);
+    }
+
     // Losing the race is not fatal if the database is there now.
     match database_exists(&bin, &port)? {
         Some(true) => Ok(true),
         None => Ok(false),
-        Some(false) => {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            Err(io::Error::other(format!(
-                "createdb failed: {}",
-                stderr.trim()
-            )))
-        }
+        Some(false) => Err(io::Error::other(format!(
+            "createdb failed: {}",
+            stderr.trim()
+        ))),
     }
+}
+
+/// Postgres' answers while it is still replaying its WAL after a hard stop.
+fn still_warming_up(stderr: &str) -> bool {
+    stderr.contains("starting up")
+        || stderr.contains("not yet accepting")
+        || stderr.contains("the database system is")
 }
 
 /// `Some(true)` the database exists, `Some(false)` it does not, `None` the
@@ -770,10 +784,7 @@ fn database_exists(bin: &Path, port: &str) -> io::Result<Option<bool>> {
     let output = query.output()?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        let warming_up = stderr.contains("starting up")
-            || stderr.contains("not yet accepting")
-            || stderr.contains("the database system is");
-        if warming_up {
+        if still_warming_up(&stderr) {
             return Ok(None);
         }
         return Err(io::Error::other(format!(

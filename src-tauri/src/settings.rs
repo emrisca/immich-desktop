@@ -20,7 +20,6 @@ pub struct Settings {
     /// app's own resource directory, which is what packaging fills in (M6).
     pub runtime_root: String,
     pub allow_phones: bool,
-    pub machine_learning: bool,
     /// Immich API key used by imports. Created at admin sign-up, and pasteable
     /// for installations that already exist.
     pub api_key: String,
@@ -42,7 +41,6 @@ impl Default for Settings {
             ml_port: 3003,
             runtime_root: String::new(),
             allow_phones: true,
-            machine_learning: false,
             api_key: String::new(),
             watch_folder: String::new(),
             ui_style: String::from(crate::DEFAULT_UI_STYLE),
@@ -62,10 +60,18 @@ fn default_library_folder() -> String {
 }
 
 impl Settings {
-    /// Whether this installation actually carries the CLIP service and its
-    /// models, which is what "machine learning" means here.
+    /// Whether this installation carries a CLIP service that can actually run.
+    ///
+    /// The entry point alone is not enough: it imports `busboy`, `sharp` and
+    /// `@huggingface/transformers` from its own `node_modules`, so a runtime
+    /// assembled without them starts a node that exits at once. The supervisor
+    /// would then restart it three times, give up, and leave Immich still
+    /// pointed at a service that is not there, failing every smart-search job.
+    /// Requiring the dependencies makes that install report machine learning as
+    /// absent instead of crash-looping.
     pub fn has_ml(settings: &Settings) -> bool {
-        Path::new(&settings.runtime_root).join("ml").join("index.mjs").is_file()
+        let dir = Path::new(&settings.runtime_root).join("ml");
+        dir.join("index.mjs").is_file() && dir.join("node_modules").is_dir()
     }
 
     pub fn path(config_dir: &Path) -> PathBuf {
@@ -131,5 +137,29 @@ mod tests {
         let settings: Settings = serde_json::from_str(json).expect("older settings load");
         assert_eq!(settings.ui_style, crate::DEFAULT_UI_STYLE);
         assert_eq!(settings.ui_style, "dark");
+    }
+
+    /// An entry point with no dependencies is not a working service: node exits
+    /// on the first import, and the supervisor would read that as a crash loop.
+    #[test]
+    fn machine_learning_needs_the_service_and_its_dependencies() {
+        let root = std::env::temp_dir().join(format!("immich-has-ml-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let ml = root.join("ml");
+        std::fs::create_dir_all(&ml).expect("scratch ml dir");
+
+        let mut settings = Settings::default();
+        settings.runtime_root = root.to_string_lossy().into_owned();
+
+        std::fs::write(ml.join("index.mjs"), "// clip service").expect("entry point");
+        assert!(
+            !Settings::has_ml(&settings),
+            "a service that cannot import its dependencies must not count"
+        );
+
+        std::fs::create_dir_all(ml.join("node_modules")).expect("dependencies");
+        assert!(Settings::has_ml(&settings));
+
+        let _ = std::fs::remove_dir_all(&root);
     }
 }
