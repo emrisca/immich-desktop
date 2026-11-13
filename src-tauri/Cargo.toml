@@ -1,6 +1,6 @@
 [package]
 name = "immich-desktop"
-version = "0.1.2"
+version = "0.1.3"
 description = "A Tauri shell that runs a local Immich server without Docker"
 license = "AGPL-3.0-only"
 edition = "2021"

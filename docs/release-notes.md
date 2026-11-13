@@ -1,5 +1,21 @@
 # Release notes
 
+## 0.1.3 — A cold start that waits for its database
+
+A hard stop leaves Postgres replaying its WAL with its port already open. When `createdb` reached
+the cluster in that state it answered "the database system is starting up", and the supervisor read
+that as a failed server row instead of a wait. The check the readiness probe already made now
+covers `createdb` too, so recovery finishes before the server is started.
+
+`IMMICH_BUILD_DATA` is passed whenever a runtime exists. Immich reads its web UI and its workflow
+plugins from that root, and gating the variable on `www` also took the plugins away.
+
+Machine learning is reported as present only when its dependencies are there as well as its entry
+point. A runtime assembled without `ml/node_modules` started a node that exited at once, was
+restarted three times, and left every smart-search job failing. Such an install now reports the
+service as absent. The unused `machineLearning` setting is gone, because it claimed the service was
+off while it was running.
+
 ## 0.1.2 — A macOS image that is checked before it ships
 
 The 0.1.1 dmg arrived as "damaged and can't be opened". Nothing had checked an image before it was
